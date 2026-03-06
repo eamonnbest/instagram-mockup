@@ -79,6 +79,10 @@ export async function PATCH(request: Request) {
 
   const { id, caption, likes_count, comments_count, display_order, notes, tags, carousel_images, scheduled_for } = body
 
+  if (!id) {
+    return NextResponse.json({ error: "Missing post ID" }, { status: 400 })
+  }
+
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (caption !== undefined) updates.caption = caption
   if (likes_count !== undefined) updates.likes_count = likes_count

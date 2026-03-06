@@ -37,11 +37,32 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ settings })
 }
 
+const ALLOWED_KEYS = [
+  "instagram_username",
+  "instagram_bio",
+  "instagram_followers",
+  "instagram_following",
+  "instagram_posts_count",
+  "instagram_avatar",
+  "instagram_is_verified",
+]
+
 export async function POST(request: NextRequest) {
-  const { key, value } = await request.json()
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
+  }
+
+  const { key, value } = body
 
   if (!key) {
     return NextResponse.json({ error: "Key is required" }, { status: 400 })
+  }
+
+  if (!ALLOWED_KEYS.includes(key)) {
+    return NextResponse.json({ error: "Invalid settings key" }, { status: 400 })
   }
 
   const { error } = await getSupabase()

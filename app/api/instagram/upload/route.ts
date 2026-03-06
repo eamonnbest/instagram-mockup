@@ -12,8 +12,18 @@ function getSupabase() {
   return _supabase
 }
 
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"]
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
+
+function detectImageType(buffer: Buffer): { ext: string; contentType: string } | null {
+  if (buffer.length < 12) return null
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return { ext: "jpg", contentType: "image/jpeg" }
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return { ext: "png", contentType: "image/png" }
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) return { ext: "gif", contentType: "image/gif" }
+  // WebP: RIFF....WEBP
+  if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+      buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) return { ext: "webp", contentType: "image/webp" }
+  return null
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,23 +34,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json({ error: "File must be JPEG, PNG, WebP, or GIF" }, { status: 400 })
-    }
-
     if (file.size > MAX_SIZE) {
       return NextResponse.json({ error: "File must be under 5MB" }, { status: 400 })
     }
 
-    const ext = file.name.split(".").pop() || "jpg"
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-
     const buffer = Buffer.from(await file.arrayBuffer())
+    const detected = detectImageType(buffer)
+    if (!detected) {
+      return NextResponse.json({ error: "File must be JPEG, PNG, WebP, or GIF" }, { status: 400 })
+    }
+
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${detected.ext}`
 
     const { error } = await getSupabase().storage
       .from("post-images")
       .upload(fileName, buffer, {
-        contentType: file.type,
+        contentType: detected.contentType,
         upsert: false,
       })
 

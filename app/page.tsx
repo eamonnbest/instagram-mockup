@@ -158,7 +158,7 @@ function SortablePost({
           className="w-full h-full relative cursor-grab active:cursor-grabbing"
         >
           {post.image_url ? (
-            <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" />
+            <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
           ) : (
             <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
               <span className="text-neutral-400 text-xs">No image</span>
@@ -171,7 +171,7 @@ function SortablePost({
       ) : (
         <button onClick={() => onOpen(post)} className="w-full h-full relative">
           {post.image_url ? (
-            <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" />
+            <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
           ) : (
             <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
               <span className="text-neutral-400 text-xs">No image</span>
@@ -757,7 +757,7 @@ export default function InstagramPage() {
                       return (
                         <div key={post?.id ?? `empty-${i}`} className="aspect-square relative bg-white">
                           {post?.image_url && (
-                            <Image src={post.image_url} alt="" fill sizes="66px" className="object-cover" />
+                            <Image src={post.image_url} alt="" fill sizes="66px" className="object-cover" unoptimized />
                           )}
                         </div>
                       )
@@ -814,6 +814,7 @@ export default function InstagramPage() {
                         fill
                         sizes="(max-width: 768px) 100vw, 600px"
                         className="object-contain"
+                        unoptimized
                       />
                       {images.length > 1 && (
                         <>
