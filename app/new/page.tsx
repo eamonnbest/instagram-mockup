@@ -110,7 +110,7 @@ export default function NewPostPage() {
   }
 
   async function generateCaptions() {
-    const context = customPrompt.trim() || caption.trim() || "a photo for our coffee brand Lattify"
+    const context = caption.trim() || customPrompt.trim() || "a photo for our brand Lattify"
     setGeneratingCaptions(true)
     setSuggestedCaptions([])
     try {

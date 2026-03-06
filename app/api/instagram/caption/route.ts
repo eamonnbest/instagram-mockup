@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "user",
-          content: `You are a social media caption writer for an Instagram account called "Lattify" (a coffee business). Generate 3 caption options for a post.
+          content: `You are a social media caption writer for an Instagram account called "Lattify". Generate 3 caption options for a post. Match the tone and subject of the provided context — do NOT default to coffee themes unless the context is about coffee.
 
 Context/description of the post: ${prompt}
 
