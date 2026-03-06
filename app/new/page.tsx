@@ -70,11 +70,11 @@ export default function NewPostPage() {
       const res = await fetch("/api/instagram/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: customPrompt,
-          model: imageModel,
-          ...(referenceImage ? { referenceImageUrl: referenceImage } : {}),
-        }),
+        body: JSON.stringify(
+          referenceImage
+            ? { prompt: customPrompt, referenceImageUrl: referenceImage }
+            : { prompt: customPrompt, model: imageModel },
+        ),
       })
 
       if (!res.ok) {
@@ -580,7 +580,7 @@ export default function NewPostPage() {
                         <span className="text-sm font-medium">Reference image</span>
                         {referenceImage && (
                           <button
-                            onClick={() => setReferenceImage(null)}
+                            onClick={() => { setReferenceImage(null); setGeneratedImage(null) }}
                             className="text-xs text-red-500 hover:text-red-600"
                           >
                             Remove
@@ -618,6 +618,7 @@ export default function NewPostPage() {
                                 if (!res.ok) throw new Error("Upload failed")
                                 const data = await res.json()
                                 setReferenceImage(data.imageUrl)
+                                setGeneratedImage(null)
                               } catch {
                                 alert("Failed to upload reference image")
                               } finally {

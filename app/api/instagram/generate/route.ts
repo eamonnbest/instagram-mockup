@@ -34,20 +34,21 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, delayMs = 2000
 export async function POST(request: NextRequest) {
   try {
     ensureFalConfig()
-    const { prompt, negativePrompt, model, referenceImageUrl, strength } = await request.json()
+    const { prompt, model, referenceImageUrl } = await request.json()
 
     if (!prompt || !prompt.trim()) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
     }
 
-    const fullPrompt = negativePrompt ? `${prompt}\n\nAvoid: ${negativePrompt}` : prompt
-
     // Image-to-image mode (FLUX Kontext Pro — context-aware editing)
     if (referenceImageUrl) {
+      if (typeof referenceImageUrl !== "string" || !referenceImageUrl.startsWith("https://")) {
+        return NextResponse.json({ error: "Reference image must be a valid HTTPS URL" }, { status: 400 })
+      }
       const result = await withRetry(async () => {
         return await fal.subscribe("fal-ai/flux-pro/kontext", {
           input: {
-            prompt: fullPrompt,
+            prompt,
             image_url: referenceImageUrl,
           },
         })
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
     const result = await withRetry(async () => {
       return await fal.subscribe(selectedModel, {
         input: {
-          prompt: fullPrompt,
+          prompt,
           image_size: sizeMap[selectedModel] || "square",
         },
       })
