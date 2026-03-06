@@ -463,14 +463,20 @@ export default function NewPostPage() {
                     <div className="flex gap-3 max-w-md mx-auto">
                       <Button
                         variant="outline"
-                        onClick={() => setGeneratedImage(null)}
+                        onClick={generateImage}
+                        disabled={generating}
                         className="flex-1"
                       >
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Try Again
+                        {generating ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                        )}
+                        Regenerate
                       </Button>
                       <Button
                         onClick={useGeneratedImage}
+                        disabled={generating}
                         className="flex-1 bg-[#0095f6] hover:bg-[#1877f2] text-white"
                       >
                         <Check className="w-4 h-4 mr-2" />
@@ -478,10 +484,13 @@ export default function NewPostPage() {
                       </Button>
                     </div>
 
-                    <p className="text-xs text-neutral-400 text-center mt-3">
-                      {customPrompt.slice(0, 100)}
-                      {customPrompt.length > 100 ? "..." : ""}
-                    </p>
+                    <button
+                      onClick={() => setGeneratedImage(null)}
+                      className="flex items-center justify-center gap-1 w-full mt-3 text-sm text-neutral-500 hover:text-neutral-700"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      Edit prompt
+                    </button>
                   </>
                 )}
               </div>
