@@ -238,23 +238,29 @@ export default function NewPostPage() {
                 <TextOverlayEditor
                   imageUrl={carouselImages[editingTextIndex] || selectedImage}
                   onExport={async (dataUrl) => {
-                    // Upload the exported image to Supabase Storage
-                    const res = await fetch(dataUrl)
-                    const blob = await res.blob()
-                    const file = new File([blob], "text-overlay.png", { type: "image/png" })
-                    const formData = new FormData()
-                    formData.append("file", file)
-                    const uploadRes = await fetch("/api/instagram/upload", {
-                      method: "POST",
-                      body: formData,
-                    })
-                    if (uploadRes.ok) {
+                    // Capture index before any async work (avoid stale closure)
+                    const idx = editingTextIndex!
+                    try {
+                      const res = await fetch(dataUrl)
+                      const blob = await res.blob()
+                      const file = new File([blob], "text-overlay.png", { type: "image/png" })
+                      const formData = new FormData()
+                      formData.append("file", file)
+                      const uploadRes = await fetch("/api/instagram/upload", {
+                        method: "POST",
+                        body: formData,
+                      })
+                      if (!uploadRes.ok) {
+                        throw new Error("Upload failed")
+                      }
                       const data = await uploadRes.json()
-                      const idx = editingTextIndex
                       setCarouselImages((prev) => prev.map((img, i) => (i === idx ? data.imageUrl : img)))
                       if (idx === 0) setSelectedImage(data.imageUrl)
+                      setEditingTextIndex(null)
+                    } catch (error) {
+                      console.error("Failed to export text overlay:", error)
+                      alert("Failed to save image with text. Please try again.")
                     }
-                    setEditingTextIndex(null)
                   }}
                   onCancel={() => setEditingTextIndex(null)}
                 />

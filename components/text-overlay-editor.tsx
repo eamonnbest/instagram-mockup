@@ -88,18 +88,16 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
   }
 
   const handleExport = useCallback(() => {
-    if (!stageRef.current) return
-    // Deselect so transformer isn't visible in export
+    if (!stageRef.current || !transformerRef.current) return
+    // Hide transformer directly on the Konva layer before export
+    transformerRef.current.nodes([])
+    transformerRef.current.getLayer()?.batchDraw()
     setSelectedId(null)
-    // Use setTimeout to let React re-render without transformer
-    setTimeout(() => {
-      if (!stageRef.current) return
-      const dataUrl = stageRef.current.toDataURL({
-        pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
-        mimeType: "image/png",
-      })
-      onExport(dataUrl)
-    }, 50)
+    const dataUrl = stageRef.current.toDataURL({
+      pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
+      mimeType: "image/png",
+    })
+    onExport(dataUrl)
   }, [onExport])
 
   const selectedBlock = textBlocks.find((b) => b.id === selectedId)
