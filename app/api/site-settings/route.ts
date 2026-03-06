@@ -1,13 +1,21 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+let _supabase: ReturnType<typeof createClient> | null = null
+function getSupabase() {
+  if (_supabase) return _supabase
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variable")
+  }
+  _supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabase
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const keysParam = searchParams.get("keys")
 
-  let query = supabase.from("site_settings").select("*")
+  let query = getSupabase().from("site_settings").select("*")
 
   if (keysParam) {
     const keys = keysParam.split(",")
@@ -35,7 +43,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Key is required" }, { status: 400 })
   }
 
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from("site_settings")
     .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" })
 

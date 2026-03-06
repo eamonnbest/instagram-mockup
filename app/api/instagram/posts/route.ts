@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variable")
+let _supabase: ReturnType<typeof createClient> | null = null
+function getSupabase() {
+  if (_supabase) return _supabase
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variable")
+  }
+  _supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabase
 }
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
 export async function GET() {
-  const { data: posts, error } = await supabase
+  const { data: posts, error } = await getSupabase()
     .from("instagram_posts")
     .select("*")
     .order("posted_at", { ascending: false })
@@ -30,7 +35,7 @@ export async function POST(request: Request) {
 
   const { image_url, caption, likes_count = 0, comments_count = 0, notes, tags, carousel_images, scheduled_for } = body
 
-  const { data: maxOrder } = await supabase
+  const { data: maxOrder } = await getSupabase()
     .from("instagram_posts")
     .select("display_order")
     .order("display_order", { ascending: false })
@@ -39,7 +44,7 @@ export async function POST(request: Request) {
 
   const newOrder = (maxOrder?.display_order || 0) + 1
 
-  const { data: post, error } = await supabase
+  const { data: post, error } = await getSupabase()
     .from("instagram_posts")
     .insert({
       image_url,
@@ -83,7 +88,7 @@ export async function PATCH(request: Request) {
   if (carousel_images !== undefined) updates.carousel_images = carousel_images
   if (scheduled_for !== undefined) updates.scheduled_for = scheduled_for
 
-  const { data: post, error } = await supabase.from("instagram_posts").update(updates).eq("id", id).select().single()
+  const { data: post, error } = await getSupabase().from("instagram_posts").update(updates).eq("id", id).select().single()
 
   if (error) {
     console.error("Failed to update post:", error)
@@ -101,7 +106,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Missing post ID" }, { status: 400 })
   }
 
-  const { error } = await supabase.from("instagram_posts").delete().eq("id", id)
+  const { error } = await getSupabase().from("instagram_posts").delete().eq("id", id)
 
   if (error) {
     console.error("Failed to delete post:", error)

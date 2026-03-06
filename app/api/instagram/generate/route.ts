@@ -1,12 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { fal } from "@fal-ai/client"
 
-if (!process.env.FAL_KEY) {
-  throw new Error("Missing FAL_KEY environment variable")
+let falConfigured = false
+function ensureFalConfig() {
+  if (falConfigured) return
+  if (!process.env.FAL_KEY) {
+    throw new Error("Missing FAL_KEY environment variable")
+  }
+  fal.config({ credentials: process.env.FAL_KEY })
+  falConfigured = true
 }
-fal.config({
-  credentials: process.env.FAL_KEY,
-})
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, delayMs = 2000): Promise<T> {
   for (let i = 0; i < maxRetries; i++) {
@@ -30,6 +33,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, delayMs = 2000
 
 export async function POST(request: NextRequest) {
   try {
+    ensureFalConfig()
     const { prompt, negativePrompt, model } = await request.json()
 
     if (!prompt || !prompt.trim()) {

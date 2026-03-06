@@ -1,15 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server"
 import Anthropic from "@anthropic-ai/sdk"
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error("Missing ANTHROPIC_API_KEY environment variable")
+function getClient() {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error("Missing ANTHROPIC_API_KEY environment variable")
+  }
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 }
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
 
 export async function POST(request: NextRequest) {
   try {
+    const anthropic = getClient()
     const { prompt, style } = await request.json()
 
     if (!prompt || !prompt.trim()) {
