@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy } from "lucide-react"
+import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
@@ -21,7 +21,8 @@ export default function NewPostPage() {
   const [generating, setGenerating] = useState(false)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
   const [posting, setPosting] = useState(false)
-  const [activeTab, setActiveTab] = useState<"url" | "generate">("generate")
+  const [activeTab, setActiveTab] = useState<"url" | "generate" | "upload">("generate")
+  const [uploading, setUploading] = useState(false)
   const [urlError, setUrlError] = useState<string | null>(null)
   const [postError, setPostError] = useState<string | null>(null)
   const [captionStyle, setCaptionStyle] = useState<"casual" | "professional" | "witty" | "minimal">("casual")
@@ -81,6 +82,43 @@ export default function NewPostPage() {
       alert(error instanceof Error ? error.message : "Failed to generate image")
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function handleFileUpload(file: File) {
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await fetch("/api/instagram/upload", {
+        method: "POST",
+        body: formData,
+      })
+      if (!res.ok) {
+        let message = "Upload failed"
+        try {
+          const errData = await res.json()
+          message = errData.error || message
+        } catch {
+          // not JSON
+        }
+        throw new Error(message)
+      }
+      const data = await res.json()
+      if (addingMore) {
+        setCarouselImages((prev) => [...prev, data.imageUrl])
+        setCarouselIndex(carouselImages.length)
+        setAddingMore(false)
+      } else {
+        setSelectedImage(data.imageUrl)
+        setCarouselImages([data.imageUrl])
+        setCarouselIndex(0)
+      }
+    } catch (error) {
+      console.error("Failed to upload image:", error)
+      alert(error instanceof Error ? error.message : "Failed to upload image")
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -401,6 +439,14 @@ export default function NewPostPage() {
                 Generate with AI
               </Button>
               <Button
+                variant={activeTab === "upload" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveTab("upload")}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload
+              </Button>
+              <Button
                 variant={activeTab === "url" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setActiveTab("url")}
@@ -410,7 +456,36 @@ export default function NewPostPage() {
               </Button>
             </div>
 
-            {activeTab === "url" ? (
+            {activeTab === "upload" ? (
+              <div>
+                <p className="text-sm text-neutral-500 mb-3">Upload an image from your device</p>
+                <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-neutral-300 rounded-lg cursor-pointer hover:border-neutral-400 transition-colors">
+                  {uploading ? (
+                    <div className="flex items-center gap-2 text-neutral-500">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="text-sm">Uploading...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-neutral-400">
+                      <Upload className="w-8 h-8" />
+                      <span className="text-sm">Click to choose a file</span>
+                      <span className="text-xs text-neutral-400">JPEG, PNG, WebP, GIF — max 5MB</span>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleFileUpload(file)
+                      e.target.value = ""
+                    }}
+                  />
+                </label>
+              </div>
+            ) : activeTab === "url" ? (
               <div>
                 <p className="text-sm text-neutral-500 mb-3">Paste an image URL</p>
                 <div className="flex gap-2">

@@ -24,6 +24,8 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight,
   Palette,
+  Download,
+  ClipboardCopy,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -233,6 +235,7 @@ export default function InstagramPage() {
   const [newTag, setNewTag] = useState("")
   const [modalCarouselIndex, setModalCarouselIndex] = useState(0)
   const [showPalette, setShowPalette] = useState(false)
+  const [copiedCaption, setCopiedCaption] = useState(false)
   const [postColors, setPostColors] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
@@ -982,10 +985,44 @@ export default function InstagramPage() {
                       <MessageCircle className="w-6 h-6 cursor-pointer hover:text-neutral-500" />
                       <Send className="w-6 h-6 cursor-pointer hover:text-neutral-500" />
                     </div>
-                    <Trash2
-                      className="w-6 h-6 cursor-pointer hover:text-red-500"
-                      onClick={() => deletePost(selectedPost.id)}
-                    />
+                    <div className="flex items-center gap-3">
+                      <button
+                        title="Copy caption"
+                        onClick={() => {
+                          if (selectedPost.caption) {
+                            navigator.clipboard.writeText(selectedPost.caption)
+                            setCopiedCaption(true)
+                            setTimeout(() => setCopiedCaption(false), 2000)
+                          }
+                        }}
+                        className="relative"
+                      >
+                        <ClipboardCopy className="w-5 h-5 cursor-pointer hover:text-neutral-500" />
+                        {copiedCaption && (
+                          <span className="absolute -top-7 left-1/2 -translate-x-1/2 text-xs bg-neutral-900 text-white px-2 py-0.5 rounded whitespace-nowrap">
+                            Copied!
+                          </span>
+                        )}
+                      </button>
+                      <a
+                        title="Download image"
+                        href={(() => {
+                          const images = selectedPost.carousel_images?.length > 1
+                            ? selectedPost.carousel_images
+                            : selectedPost.image_url ? [selectedPost.image_url] : []
+                          return images[modalCarouselIndex] || "#"
+                        })()}
+                        download
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Download className="w-5 h-5 cursor-pointer hover:text-neutral-500" />
+                      </a>
+                      <Trash2
+                        className="w-5 h-5 cursor-pointer hover:text-red-500"
+                        onClick={() => deletePost(selectedPost.id)}
+                      />
+                    </div>
                   </div>
                   <p className="font-semibold text-sm">{selectedPost.likes_count.toLocaleString()} likes</p>
                   <p className="text-[10px] text-neutral-400 uppercase mt-1">
