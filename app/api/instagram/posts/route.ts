@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-let _supabase: ReturnType<typeof createClient> | null = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _supabase: any = null
 function getSupabase() {
   if (_supabase) return _supabase
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
     .select("display_order")
     .order("display_order", { ascending: false })
     .limit(1)
-    .single() as { data: { display_order: number } | null }
+    .single()
 
   const newOrder = (maxOrder?.display_order || 0) + 1
 
