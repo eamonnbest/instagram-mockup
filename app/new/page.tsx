@@ -38,6 +38,8 @@ export default function NewPostPage() {
   const [captionContext, setCaptionContext] = useState("")
   const [imageModel, setImageModel] = useState("fal-ai/nano-banana-2")
   const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null)
+  const [referenceImage, setReferenceImage] = useState<string | null>(null)
+  const [uploadingReference, setUploadingReference] = useState(false)
 
   function useImageUrl() {
     const trimmed = imageUrl.trim()
@@ -68,7 +70,11 @@ export default function NewPostPage() {
       const res = await fetch("/api/instagram/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: customPrompt, model: imageModel }),
+        body: JSON.stringify({
+          prompt: customPrompt,
+          model: imageModel,
+          ...(referenceImage ? { referenceImageUrl: referenceImage } : {}),
+        }),
       })
 
       if (!res.ok) {
@@ -564,20 +570,89 @@ export default function NewPostPage() {
               <div>
                 {!generatedImage ? (
                   <>
-                    <p className="text-sm text-neutral-500 mb-3">Describe the image you want</p>
-                    <select
-                      value={imageModel}
-                      onChange={(e) => setImageModel(e.target.value)}
-                      className="w-full mb-3 px-3 py-2 text-sm border border-neutral-200 rounded-md bg-white"
-                    >
-                      <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
-                      <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
-                      <option value="fal-ai/flux-2-pro">Flux 2 Pro</option>
-                    </select>
+                    <p className="text-sm text-neutral-500 mb-3">
+                      {referenceImage ? "Describe how to transform the reference" : "Describe the image you want"}
+                    </p>
+
+                    {/* Reference image toggle */}
+                    <div className="mb-3 p-3 bg-neutral-50 rounded-lg border border-neutral-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium">Reference image</span>
+                        {referenceImage && (
+                          <button
+                            onClick={() => setReferenceImage(null)}
+                            className="text-xs text-red-500 hover:text-red-600"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      {referenceImage ? (
+                        <div className="relative w-20 h-20 rounded-md overflow-hidden bg-neutral-100">
+                          <Image src={referenceImage} alt="Reference" fill className="object-cover" unoptimized />
+                        </div>
+                      ) : (
+                        <label className="flex items-center justify-center h-20 border-2 border-dashed border-neutral-300 rounded-md cursor-pointer hover:border-neutral-400 transition-colors">
+                          {uploadingReference ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-neutral-400" />
+                          ) : (
+                            <span className="text-xs text-neutral-400">Upload a reference photo</span>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,image/gif"
+                            className="hidden"
+                            disabled={uploadingReference}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              e.target.value = ""
+                              setUploadingReference(true)
+                              try {
+                                const formData = new FormData()
+                                formData.append("file", file)
+                                const res = await fetch("/api/instagram/upload", {
+                                  method: "POST",
+                                  body: formData,
+                                })
+                                if (!res.ok) throw new Error("Upload failed")
+                                const data = await res.json()
+                                setReferenceImage(data.imageUrl)
+                              } catch {
+                                alert("Failed to upload reference image")
+                              } finally {
+                                setUploadingReference(false)
+                              }
+                            }}
+                          />
+                        </label>
+                      )}
+                      <p className="text-[11px] text-neutral-400 mt-1.5">
+                        {referenceImage
+                          ? "AI will edit this image based on your prompt (FLUX Kontext)"
+                          : "Optional — upload a photo and the AI will transform it instead of generating from scratch"}
+                      </p>
+                    </div>
+
+                    {/* Model picker — only for text-to-image (no reference) */}
+                    {!referenceImage && (
+                      <select
+                        value={imageModel}
+                        onChange={(e) => setImageModel(e.target.value)}
+                        className="w-full mb-3 px-3 py-2 text-sm border border-neutral-200 rounded-md bg-white"
+                      >
+                        <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
+                        <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
+                        <option value="fal-ai/flux-2-pro">Flux 2 Pro</option>
+                      </select>
+                    )}
+
                     <Textarea
                       value={customPrompt}
                       onChange={(e) => setCustomPrompt(e.target.value)}
-                      placeholder="A flat white coffee on a marble counter, morning light, minimal aesthetic..."
+                      placeholder={referenceImage
+                        ? "Make it look unglamorous, fluorescent lighting, slightly out of focus..."
+                        : "A flat white coffee on a marble counter, morning light, minimal aesthetic..."}
                       className="mb-3 min-h-[100px]"
                     />
                     <Button onClick={generateImage} disabled={generating || !customPrompt.trim()} className="w-full">

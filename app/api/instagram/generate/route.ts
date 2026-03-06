@@ -34,16 +34,36 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, delayMs = 2000
 export async function POST(request: NextRequest) {
   try {
     ensureFalConfig()
-    const { prompt, negativePrompt, model } = await request.json()
+    const { prompt, negativePrompt, model, referenceImageUrl, strength } = await request.json()
 
     if (!prompt || !prompt.trim()) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
     }
 
+    const fullPrompt = negativePrompt ? `${prompt}\n\nAvoid: ${negativePrompt}` : prompt
+
+    // Image-to-image mode (FLUX Kontext Pro — context-aware editing)
+    if (referenceImageUrl) {
+      const result = await withRetry(async () => {
+        return await fal.subscribe("fal-ai/flux-pro/kontext", {
+          input: {
+            prompt: fullPrompt,
+            image_url: referenceImageUrl,
+          },
+        })
+      })
+
+      const generatedImageUrl = result.data?.images?.[0]?.url
+      if (!generatedImageUrl) {
+        throw new Error("No image generated from fal")
+      }
+
+      return NextResponse.json({ success: true, imageUrl: generatedImageUrl })
+    }
+
+    // Text-to-image mode
     const allowedModels = ["fal-ai/nano-banana-2", "fal-ai/gpt-image-1.5", "fal-ai/flux-2-pro"]
     const selectedModel = allowedModels.includes(model) ? model : allowedModels[0]
-
-    const fullPrompt = negativePrompt ? `${prompt}\n\nAvoid: ${negativePrompt}` : prompt
 
     // Each model uses different image_size formats
     const sizeMap: Record<string, string> = {
