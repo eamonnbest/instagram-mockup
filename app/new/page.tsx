@@ -28,6 +28,7 @@ export default function NewPostPage() {
   const [suggestedCaptions, setSuggestedCaptions] = useState<string[]>([])
   const [generatingCaptions, setGeneratingCaptions] = useState(false)
   const [showCaptionAssist, setShowCaptionAssist] = useState(false)
+  const [captionContext, setCaptionContext] = useState("")
   const [imageModel, setImageModel] = useState("fal-ai/nano-banana-2")
 
   function useImageUrl() {
@@ -110,7 +111,8 @@ export default function NewPostPage() {
   }
 
   async function generateCaptions() {
-    const context = caption.trim() || customPrompt.trim() || "a photo for our brand Lattify"
+    const base = caption.trim() || customPrompt.trim() || "a photo for our brand Lattify"
+    const context = captionContext.trim() ? `${base}\n\nAdditional instructions: ${captionContext.trim()}` : base
     setGeneratingCaptions(true)
     setSuggestedCaptions([])
     try {
@@ -297,6 +299,13 @@ export default function NewPostPage() {
                         </button>
                       ))}
                     </div>
+
+                    <Textarea
+                      value={captionContext}
+                      onChange={(e) => setCaptionContext(e.target.value)}
+                      placeholder="Any extra instructions? e.g. 'mention training', 'keep it under 2 lines', 'sound urgent'..."
+                      className="mb-3 min-h-[60px] text-sm resize-none"
+                    />
 
                     <Button
                       size="sm"
