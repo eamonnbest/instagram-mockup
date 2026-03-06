@@ -3,7 +3,13 @@
 import { useState } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload } from "lucide-react"
+import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type } from "lucide-react"
+import dynamic from "next/dynamic"
+
+const TextOverlayEditor = dynamic(
+  () => import("@/components/text-overlay-editor").then((m) => m.TextOverlayEditor),
+  { ssr: false },
+)
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
@@ -31,6 +37,7 @@ export default function NewPostPage() {
   const [showCaptionAssist, setShowCaptionAssist] = useState(false)
   const [captionContext, setCaptionContext] = useState("")
   const [imageModel, setImageModel] = useState("fal-ai/nano-banana-2")
+  const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null)
 
   function useImageUrl() {
     const trimmed = imageUrl.trim()
@@ -226,6 +233,34 @@ export default function NewPostPage() {
         {/* Selected image preview + caption */}
         {selectedImage && !addingMore && (
           <div className="mb-6">
+            {editingTextIndex !== null ? (
+              <div className="max-w-md mx-auto">
+                <TextOverlayEditor
+                  imageUrl={carouselImages[editingTextIndex] || selectedImage}
+                  onExport={async (dataUrl) => {
+                    // Upload the exported image to Supabase Storage
+                    const res = await fetch(dataUrl)
+                    const blob = await res.blob()
+                    const file = new File([blob], "text-overlay.png", { type: "image/png" })
+                    const formData = new FormData()
+                    formData.append("file", file)
+                    const uploadRes = await fetch("/api/instagram/upload", {
+                      method: "POST",
+                      body: formData,
+                    })
+                    if (uploadRes.ok) {
+                      const data = await uploadRes.json()
+                      const idx = editingTextIndex
+                      setCarouselImages((prev) => prev.map((img, i) => (i === idx ? data.imageUrl : img)))
+                      if (idx === 0) setSelectedImage(data.imageUrl)
+                    }
+                    setEditingTextIndex(null)
+                  }}
+                  onCancel={() => setEditingTextIndex(null)}
+                />
+              </div>
+            ) : (
+            <>
             {/* Carousel viewer */}
             <div className="aspect-square max-w-md mx-auto relative bg-neutral-100 rounded-lg overflow-hidden">
               <Image src={carouselImages[carouselIndex] || selectedImage} alt="Selected" fill className="object-cover" unoptimized />
@@ -299,6 +334,21 @@ export default function NewPostPage() {
                 </button>
               )}
             </div>
+
+            {/* Add Text Overlay */}
+            <div className="max-w-md mx-auto mt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditingTextIndex(carouselIndex)}
+                className="w-full"
+              >
+                <Type className="w-4 h-4 mr-1.5" />
+                Add Text to Image
+              </Button>
+            </div>
+            </>
+            )}
 
             {/* Caption */}
             <div className="max-w-md mx-auto mt-4">
