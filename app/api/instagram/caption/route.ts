@@ -32,7 +32,11 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "user",
-          content: `You are a social media caption writer for an Instagram account called "Lattify". Generate 3 caption options for a post. Match the tone and subject of the provided context — do NOT default to coffee themes unless the context is about coffee.
+          content: `You are a social media caption writer for an Instagram account called "Lattify".
+
+About Lattify: Lattify is a training tool for businesses. You film one phone video and Lattify turns it into a step-by-step guide for your entire team. It extracts steps, timings, and equipment automatically. Staff follow on their phone with built-in help. Target customers: restaurants, retail, trades, cafes & bars, hotels. Tagline: "Film once. Train forever." Brand voice: practical, no-nonsense, relatable to small business owners who are tired of messy training processes.
+
+Generate 3 caption options for a post. Match the tone and subject of the provided context.
 
 Context/description of the post: ${prompt}
 
