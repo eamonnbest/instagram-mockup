@@ -9,11 +9,11 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
-        hostname: "fal.media",
+        hostname: "**.fal.media",
       },
       {
         protocol: "https",
-        hostname: "v3.fal.media",
+        hostname: "fal.media",
       },
     ],
   },

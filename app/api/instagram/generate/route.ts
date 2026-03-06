@@ -1,6 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { fal } from "@fal-ai/client"
 
+if (!process.env.FAL_KEY) {
+  throw new Error("Missing FAL_KEY environment variable")
+}
 fal.config({
   credentials: process.env.FAL_KEY,
 })
@@ -27,20 +30,22 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, delayMs = 2000
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, negativePrompt } = await request.json()
+    const { prompt, negativePrompt, model } = await request.json()
 
     if (!prompt || !prompt.trim()) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
     }
 
+    const allowedModels = ["fal-ai/nano-banana-2", "fal-ai/gpt-image-1.5", "fal-ai/flux-2-pro"]
+    const selectedModel = allowedModels.includes(model) ? model : allowedModels[0]
+
     const fullPrompt = negativePrompt ? `${prompt}\n\nAvoid: ${negativePrompt}` : prompt
 
     const result = await withRetry(async () => {
-      return await fal.subscribe("fal-ai/nano-banana-pro", {
+      return await fal.subscribe(selectedModel, {
         input: {
           prompt: fullPrompt,
-          aspect_ratio: "1:1",
-          resolution: "1K",
+          image_size: "square",
         },
       })
     })
