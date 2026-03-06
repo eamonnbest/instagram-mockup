@@ -363,7 +363,7 @@ export default function NewPostPage() {
                 }}
                 className="w-full mt-2 text-sm text-neutral-500 hover:text-neutral-700"
               >
-                Start over
+                Choose a different image
               </button>
             </div>
           </div>
