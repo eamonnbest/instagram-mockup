@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     .select("display_order")
     .order("display_order", { ascending: false })
     .limit(1)
-    .single()
+    .single() as { data: { display_order: number } | null }
 
   const newOrder = (maxOrder?.display_order || 0) + 1
 
