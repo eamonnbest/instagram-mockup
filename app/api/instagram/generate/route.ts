@@ -45,11 +45,18 @@ export async function POST(request: NextRequest) {
 
     const fullPrompt = negativePrompt ? `${prompt}\n\nAvoid: ${negativePrompt}` : prompt
 
+    // Each model uses different image_size formats
+    const sizeMap: Record<string, string> = {
+      "fal-ai/nano-banana-2": "1K",
+      "fal-ai/gpt-image-1.5": "1024x1024",
+      "fal-ai/flux-2-pro": "square",
+    }
+
     const result = await withRetry(async () => {
       return await fal.subscribe(selectedModel, {
         input: {
           prompt: fullPrompt,
-          image_size: "square",
+          image_size: sizeMap[selectedModel] || "square",
         },
       })
     })
