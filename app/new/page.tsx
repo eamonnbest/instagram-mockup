@@ -40,6 +40,27 @@ export default function NewPostPage() {
   const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null)
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
   const [uploadingReference, setUploadingReference] = useState(false)
+  const [dragOverRef, setDragOverRef] = useState(false)
+
+  async function uploadReferenceFile(file: File) {
+    setUploadingReference(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await fetch("/api/instagram/upload", {
+        method: "POST",
+        body: formData,
+      })
+      if (!res.ok) throw new Error("Upload failed")
+      const data = await res.json()
+      setReferenceImage(data.imageUrl)
+      setGeneratedImage(null)
+    } catch {
+      alert("Failed to upload reference image")
+    } finally {
+      setUploadingReference(false)
+    }
+  }
 
   function useImageUrl() {
     const trimmed = imageUrl.trim()
@@ -592,11 +613,25 @@ export default function NewPostPage() {
                           <Image src={referenceImage} alt="Reference" fill className="object-cover" unoptimized />
                         </div>
                       ) : (
-                        <label className="flex items-center justify-center h-20 border-2 border-dashed border-neutral-300 rounded-md cursor-pointer hover:border-neutral-400 transition-colors">
+                        <label
+                          className={`flex items-center justify-center h-20 border-2 border-dashed rounded-md cursor-pointer transition-colors ${
+                            dragOverRef ? "border-blue-400 bg-blue-50" : "border-neutral-300 hover:border-neutral-400"
+                          }`}
+                          onDragOver={(e) => { e.preventDefault(); setDragOverRef(true) }}
+                          onDragLeave={() => setDragOverRef(false)}
+                          onDrop={async (e) => {
+                            e.preventDefault()
+                            setDragOverRef(false)
+                            const file = e.dataTransfer.files?.[0]
+                            if (file) await uploadReferenceFile(file)
+                          }}
+                        >
                           {uploadingReference ? (
                             <Loader2 className="w-4 h-4 animate-spin text-neutral-400" />
                           ) : (
-                            <span className="text-xs text-neutral-400">Upload a reference photo</span>
+                            <span className="text-xs text-neutral-400">
+                              {dragOverRef ? "Drop image here" : "Drag & drop or click to upload"}
+                            </span>
                           )}
                           <input
                             type="file"
@@ -607,23 +642,7 @@ export default function NewPostPage() {
                               const file = e.target.files?.[0]
                               if (!file) return
                               e.target.value = ""
-                              setUploadingReference(true)
-                              try {
-                                const formData = new FormData()
-                                formData.append("file", file)
-                                const res = await fetch("/api/instagram/upload", {
-                                  method: "POST",
-                                  body: formData,
-                                })
-                                if (!res.ok) throw new Error("Upload failed")
-                                const data = await res.json()
-                                setReferenceImage(data.imageUrl)
-                                setGeneratedImage(null)
-                              } catch {
-                                alert("Failed to upload reference image")
-                              } finally {
-                                setUploadingReference(false)
-                              }
+                              await uploadReferenceFile(file)
                             }}
                           />
                         </label>
