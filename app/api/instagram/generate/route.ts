@@ -45,17 +45,53 @@ export async function POST(request: NextRequest) {
       if (typeof referenceImageUrl !== "string" || !referenceImageUrl.startsWith("https://")) {
         return NextResponse.json({ error: "Reference image must be a valid HTTPS URL" }, { status: 400 })
       }
-      const allowedImg2Img = ["fal-ai/flux/krea/image-to-image"]
+      const allowedImg2Img = ["fal-ai/flux/krea/image-to-image", "fal-ai/gpt-image-1.5", "fal-ai/nano-banana-2"]
       const img2imgModel = allowedImg2Img.includes(model) ? model : allowedImg2Img[0]
 
-      const strength = typeof referenceStrength === "number" ? Math.max(0.05, Math.min(1, referenceStrength)) : 0.3
-      const input: Record<string, unknown> = { prompt, image_url: referenceImageUrl }
-      // Krea's strength is inverted: high = more deviation. Flip so slider "Exact" = low deviation.
-      input.strength = Math.max(0.05, 1 - strength + 0.05)
+      // Map preset to model-specific params
+      const preset = typeof referenceStrength === "string" ? referenceStrength : "inspired"
+      // Krea strength: high = more deviation. These are tuned to its useful range.
+      const kreaStrengthMap: Record<string, number> = {
+        "same-vibe": 0.95,    // max deviation — same mood, different image
+        "inspired": 0.75,     // similar scene, different details
+        "close": 0.45,        // recognizably similar
+        "near-identical": 0.15, // as close as possible
+      }
 
-      const result = await withRetry(async () => {
-        return await fal.subscribe(img2imgModel, { input })
-      })
+      let result
+      if (img2imgModel === "fal-ai/flux/krea/image-to-image") {
+        result = await withRetry(async () => {
+          return await fal.subscribe(img2imgModel, {
+            input: {
+              prompt,
+              image_url: referenceImageUrl,
+              strength: kreaStrengthMap[preset] ?? 0.75,
+            },
+          })
+        })
+      } else if (img2imgModel === "fal-ai/gpt-image-1.5") {
+        result = await withRetry(async () => {
+          return await fal.subscribe(img2imgModel, {
+            input: {
+              prompt,
+              image_urls: [referenceImageUrl],
+              image_size: "1024x1024",
+              input_fidelity: preset === "near-identical" || preset === "close" ? "high" : "low",
+            },
+          })
+        })
+      } else {
+        // Nano Banana 2
+        result = await withRetry(async () => {
+          return await fal.subscribe(img2imgModel, {
+            input: {
+              prompt,
+              image_urls: [referenceImageUrl],
+              resolution: "1K",
+            },
+          })
+        })
+      }
 
       const generatedImageUrl = result.data?.images?.[0]?.url
       if (!generatedImageUrl) {

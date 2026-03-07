@@ -54,7 +54,7 @@ function NewPostPage() {
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
   const [uploadingReference, setUploadingReference] = useState(false)
   const [dragOverRef, setDragOverRef] = useState(false)
-  const [referenceStrength, setReferenceStrength] = useState(0.3)
+  const [referencePreset, setReferencePreset] = useState<"same-vibe" | "inspired" | "close" | "near-identical">("inspired")
   // Per-image overlay blocks (keyed by carousel index) and original (pre-overlay) image URLs
   const [overlayBlocksMap, setOverlayBlocksMap] = useState<Record<number, CanvasBlock[]>>({})
   const [originalImageUrls, setOriginalImageUrls] = useState<string[]>([])
@@ -156,7 +156,7 @@ function NewPostPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           referenceImage
-            ? { prompt: customPrompt, referenceImageUrl: referenceImage, model: imageModel, referenceStrength }
+            ? { prompt: customPrompt, referenceImageUrl: referenceImage, model: imageModel, referenceStrength: referencePreset }
             : { prompt: customPrompt, model: imageModel },
         ),
       })
@@ -769,24 +769,30 @@ function NewPostPage() {
                       )}
                       <p className="text-[11px] text-neutral-400 mt-1.5">
                         {referenceImage
-                          ? "AI will use this as inspiration — adjust the slider below to control how closely"
+                          ? "AI will use this as inspiration — choose how closely it should follow the original"
                           : "Optional — upload a photo and the AI will transform it instead of generating from scratch"}
                       </p>
                       {referenceImage && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <span className="text-[11px] text-neutral-500 w-16 shrink-0">Inspiration</span>
-                          <input
-                            type="range"
-                            min={0.05}
-                            max={1}
-                            step={0.05}
-                            value={referenceStrength}
-                            onChange={(e) => setReferenceStrength(Number(e.target.value))}
-                            className="flex-1"
-                          />
-                          <span className="text-[11px] text-neutral-500 w-12 text-right">
-                            {referenceStrength <= 0.25 ? "Loose" : referenceStrength <= 0.5 ? "Medium" : referenceStrength <= 0.75 ? "Close" : "Exact"}
-                          </span>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {([
+                            { value: "same-vibe", label: "Same vibe" },
+                            { value: "inspired", label: "Inspired by" },
+                            { value: "close", label: "Close match" },
+                            { value: "near-identical", label: "Near identical" },
+                          ] as const).map((preset) => (
+                            <button
+                              key={preset.value}
+                              type="button"
+                              onClick={() => setReferencePreset(preset.value)}
+                              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                                referencePreset === preset.value
+                                  ? "bg-black text-white border-black"
+                                  : "bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400"
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -800,6 +806,8 @@ function NewPostPage() {
                       {referenceImage ? (
                         <>
                           <option value="fal-ai/flux/krea/image-to-image">FLUX Krea</option>
+                          <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
+                          <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
                         </>
                       ) : (
                         <>
