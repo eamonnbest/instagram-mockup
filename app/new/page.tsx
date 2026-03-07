@@ -54,7 +54,7 @@ function NewPostPage() {
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
   const [uploadingReference, setUploadingReference] = useState(false)
   const [dragOverRef, setDragOverRef] = useState(false)
-  const [referencePreset, setReferencePreset] = useState<"same-vibe" | "inspired" | "close" | "near-identical">("inspired")
+  const [referencePreset, setReferencePreset] = useState<"same-vibe" | "close">("close")
   // Per-image overlay blocks (keyed by carousel index) and original (pre-overlay) image URLs
   const [overlayBlocksMap, setOverlayBlocksMap] = useState<Record<number, CanvasBlock[]>>({})
   const [originalImageUrls, setOriginalImageUrls] = useState<string[]>([])
@@ -116,7 +116,7 @@ function NewPostPage() {
       if (!res.ok) throw new Error("Upload failed")
       const data = await res.json()
       setReferenceImage(data.imageUrl)
-      setImageModel("fal-ai/flux/krea/image-to-image")
+      setImageModel("fal-ai/gpt-image-1.5")
       setGeneratedImage(null)
     } catch {
       alert("Failed to upload reference image")
@@ -146,7 +146,7 @@ function NewPostPage() {
   }
 
   async function generateImage() {
-    if (!customPrompt.trim()) return
+    if (!customPrompt.trim() && !referenceImage) return
 
     setGenerating(true)
     setGeneratedImage(null)
@@ -776,9 +776,7 @@ function NewPostPage() {
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {([
                             { value: "same-vibe", label: "Same vibe" },
-                            { value: "inspired", label: "Inspired by" },
                             { value: "close", label: "Close match" },
-                            { value: "near-identical", label: "Near identical" },
                           ] as const).map((preset) => (
                             <button
                               key={preset.value}
@@ -805,7 +803,6 @@ function NewPostPage() {
                     >
                       {referenceImage ? (
                         <>
-                          <option value="fal-ai/flux/krea/image-to-image">FLUX Krea</option>
                           <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
                           <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
                         </>
@@ -814,7 +811,6 @@ function NewPostPage() {
                           <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
                           <option value="fal-ai/bytedance/seedream/v4.5/text-to-image">Seedream V4.5</option>
                           <option value="fal-ai/recraft/v3/text-to-image">Recraft V3</option>
-                          <option value="fal-ai/flux/krea">FLUX Krea</option>
                           <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
                         </>
                       )}
@@ -828,7 +824,7 @@ function NewPostPage() {
                         : "A flat white coffee on a marble counter, morning light, minimal aesthetic..."}
                       className="mb-3 min-h-[100px]"
                     />
-                    <Button onClick={generateImage} disabled={generating || !customPrompt.trim()} className="w-full">
+                    <Button onClick={generateImage} disabled={generating || (!customPrompt.trim() && !referenceImage)} className="w-full">
                       {generating ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
