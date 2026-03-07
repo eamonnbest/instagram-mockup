@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
       return await fal.subscribe(selectedModel, {
         input: {
           prompt: finalPrompt,
-          image_size: selectedModel === "fal-ai/gpt-image-1.5" ? "1024x1024" : "square",
+          image_size: "1024x1024",
         },
       })
     })

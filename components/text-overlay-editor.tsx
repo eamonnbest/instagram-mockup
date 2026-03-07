@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react"
 import { Stage, Layer, Image as KonvaImage, Text, Rect, Ellipse, Arrow, Line, Transformer, Group } from "react-konva"
 import type Konva from "konva"
 import { Button } from "@/components/ui/button"
@@ -108,8 +108,11 @@ export type CanvasBlock = TextBlock | ShapeBlock | EllipseBlock | LineBlock | Im
 interface TextOverlayEditorProps {
   imageUrl: string
   onExport: (dataUrl: string, blocks: CanvasBlock[]) => void
-  onCancel?: () => void
   initialBlocks?: CanvasBlock[]
+}
+
+export interface TextOverlayEditorHandle {
+  triggerExport: () => void
 }
 
 const CANVAS_SIZE = 1080
@@ -263,7 +266,7 @@ const FONT_FAMILIES = [
   "Comic Sans MS",
 ]
 
-export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks }: TextOverlayEditorProps) {
+export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlayEditorProps>(function TextOverlayEditor({ imageUrl, onExport, initialBlocks }, ref) {
   const stageRef = useRef<Konva.Stage>(null)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
@@ -513,6 +516,10 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks 
     setSelectedId(null)
     onExport(dataUrl, blocks)
   }, [onExport, blocks])
+
+  useImperativeHandle(ref, () => ({
+    triggerExport: handleExport,
+  }), [handleExport])
 
   const selectedBlock = blocks.find((b) => b.id === selectedId)
   const scale = DISPLAY_SIZE / CANVAS_SIZE
@@ -1354,4 +1361,4 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks 
       </Button>
     </div>
   )
-}
+})

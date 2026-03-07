@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
 import Image from "next/image"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type } from "lucide-react"
 import dynamic from "next/dynamic"
-import type { CanvasBlock } from "@/components/text-overlay-editor"
+import type { CanvasBlock, TextOverlayEditorHandle } from "@/components/text-overlay-editor"
 
 const TextOverlayEditor = dynamic(
   () => import("@/components/text-overlay-editor").then((m) => m.TextOverlayEditor),
@@ -28,6 +28,8 @@ function NewPostPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editPostId = searchParams.get("edit")
+  const editorRef = useRef<TextOverlayEditorHandle>(null)
+  const editorExportResolveRef = useRef<(() => void) | null>(null)
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [carouselImages, setCarouselImages] = useState<string[]>([])
   const [carouselIndex, setCarouselIndex] = useState(0)
@@ -294,6 +296,20 @@ function NewPostPage() {
     setPosting(true)
     setPostError(null)
     try {
+      // If editor is open, auto-export before saving
+      if (editingTextIndex !== null && editorRef.current) {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            editorExportResolveRef.current = null
+            resolve()
+          }, 15000)
+          editorExportResolveRef.current = () => {
+            clearTimeout(timeout)
+            resolve()
+          }
+          editorRef.current!.triggerExport()
+        })
+      }
       const isEdit = !!editPostId
       const res = await fetch("/api/instagram/posts", {
         method: isEdit ? "PATCH" : "POST",
@@ -358,6 +374,7 @@ function NewPostPage() {
             {editingTextIndex !== null ? (
               <div className="max-w-md mx-auto">
                 <TextOverlayEditor
+                  ref={editorRef}
                   imageUrl={originalImageUrls[editingTextIndex] || carouselImages[editingTextIndex] || selectedImage}
                   initialBlocks={overlayBlocksMap[editingTextIndex]}
                   onExport={async (dataUrl, blocks) => {
@@ -400,9 +417,13 @@ function NewPostPage() {
                       alert("Failed to save image with text. Please try again.")
                     } finally {
                       setExportingOverlay(false)
+                      // Resolve any pending save-post promise
+                      if (editorExportResolveRef.current) {
+                        editorExportResolveRef.current()
+                        editorExportResolveRef.current = null
+                      }
                     }
                   }}
-                  onCancel={() => setEditingTextIndex(null)}
                 />
               </div>
             ) : (
@@ -490,7 +511,7 @@ function NewPostPage() {
                 className="w-full"
               >
                 <Type className="w-4 h-4 mr-1.5" />
-                {overlayBlocksMap[carouselIndex]?.length ? "Edit Text & Overlays" : "Add Text to Image"}
+                Edit Image
               </Button>
             </div>
             </>
@@ -590,7 +611,7 @@ function NewPostPage() {
                 {exportingOverlay ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Applying text...
+                    Saving image...
                   </>
                 ) : posting ? (
                   <>
