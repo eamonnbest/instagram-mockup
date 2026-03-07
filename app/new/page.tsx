@@ -32,6 +32,7 @@ function NewPostPage() {
   const editPostId = searchParams.get("edit")
   const editorRef = useRef<TextOverlayEditorHandle>(null)
   const editorExportResolveRef = useRef<(() => void) | null>(null)
+  const exportedImageUrlRef = useRef<string | null>(null)
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [carouselImages, setCarouselImages] = useState<string[]>([])
   const [carouselIndex, setCarouselIndex] = useState(0)
@@ -371,6 +372,7 @@ function NewPostPage() {
     setPostError(null)
     try {
       // If editor is open, auto-export before saving
+      exportedImageUrlRef.current = null
       if (editingTextIndex !== null && editorRef.current) {
         await new Promise<void>((resolve) => {
           const timeout = setTimeout(() => {
@@ -384,6 +386,12 @@ function NewPostPage() {
           editorRef.current!.triggerExport()
         })
       }
+      // Use the freshly exported image URL if available (state updates are async so we can't rely on them)
+      const freshImage = exportedImageUrlRef.current
+      const finalImages = freshImage
+        ? carouselImages.map((img, i) => (i === (editingTextIndex ?? carouselIndex) ? freshImage : img))
+        : carouselImages
+      const finalSelectedImage = freshImage || carouselImages[0] || selectedImage
       const isEdit = !!editPostId
       const res = await fetch("/api/instagram/posts", {
         method: isEdit ? "PATCH" : "POST",
@@ -392,18 +400,18 @@ function NewPostPage() {
           isEdit
             ? {
                 id: editPostId,
-                image_url: carouselImages[0] || selectedImage,
+                image_url: finalImages[0] || finalSelectedImage,
                 caption,
-                carousel_images: carouselImages.length > 1 ? carouselImages : [],
+                carousel_images: finalImages.length > 1 ? finalImages : [],
                 overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
               }
             : {
-                image_url: carouselImages[0] || selectedImage,
+                image_url: finalImages[0] || finalSelectedImage,
                 caption,
                 likes_count: Math.floor(Math.random() * 30) + 10,
                 comments_count: Math.floor(Math.random() * 5) + 1,
-                carousel_images: carouselImages.length > 1 ? carouselImages : [],
+                carousel_images: finalImages.length > 1 ? finalImages : [],
                 overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
               }
@@ -485,6 +493,8 @@ function NewPostPage() {
                       const data = await uploadRes.json()
                       setCarouselImages((prev) => prev.map((img, i) => (i === idx ? data.imageUrl : img)))
                       if (idx === 0) setSelectedImage(data.imageUrl)
+                      // Store exported URL in ref so createPost can read it immediately (state updates are async)
+                      exportedImageUrlRef.current = data.imageUrl
                       setEditingTextIndex(null)
                     } catch (error) {
                       console.error("Failed to export text overlay:", error)

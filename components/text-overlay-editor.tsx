@@ -1387,13 +1387,6 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
         </div>
       )}
 
-      {/* Done */}
-      <Button
-        onClick={handleExport}
-        className="w-full bg-[#0095f6] hover:bg-[#1877f2] text-white"
-      >
-        Done
-      </Button>
     </div>
   )
 })
