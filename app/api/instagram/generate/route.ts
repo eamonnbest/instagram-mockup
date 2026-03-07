@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Text-to-image mode
-    const allowedModels = ["fal-ai/nano-banana-2", "fal-ai/gpt-image-1.5"]
+    const allowedModels = ["fal-ai/nano-banana-2", "fal-ai/gpt-image-1.5", "fal-ai/flux/dev"]
     const selectedModel = allowedModels.includes(model) ? model : allowedModels[0]
 
     // Nano Banana 2 uses resolution, not image_size
@@ -147,12 +147,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, imageUrl: generatedImageUrl })
     }
 
-    // GPT Image uses 1024x1024
+    // Standard models use image_size
+    const sizeMap: Record<string, string> = {
+      "fal-ai/gpt-image-1.5": "1024x1024",
+      "fal-ai/flux/dev": "square_hd",
+    }
     const result = await withRetry(async () => {
       return await fal.subscribe(selectedModel, {
         input: {
           prompt: finalPrompt,
-          image_size: "1024x1024",
+          image_size: sizeMap[selectedModel] || "square_hd",
         },
       })
     })

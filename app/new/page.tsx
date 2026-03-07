@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type } from "lucide-react"
 import dynamic from "next/dynamic"
 import type { CanvasBlock, TextOverlayEditorHandle } from "@/components/text-overlay-editor"
+import { templates, hydrateTemplate } from "@/lib/templates"
+import { TemplateThumbnail } from "@/components/template-thumbnail"
 
 const TextOverlayEditor = dynamic(
   () => import("@/components/text-overlay-editor").then((m) => m.TextOverlayEditor),
@@ -41,7 +43,7 @@ function NewPostPage() {
   const [generating, setGenerating] = useState(false)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
   const [posting, setPosting] = useState(false)
-  const [activeTab, setActiveTab] = useState<"url" | "generate" | "upload">("generate")
+  const [activeTab, setActiveTab] = useState<"url" | "generate" | "upload" | "template">("generate")
   const [uploading, setUploading] = useState(false)
   const [urlError, setUrlError] = useState<string | null>(null)
   const [postError, setPostError] = useState<string | null>(null)
@@ -60,6 +62,7 @@ function NewPostPage() {
   // Per-image overlay blocks (keyed by carousel index) and original (pre-overlay) image URLs
   const [overlayBlocksMap, setOverlayBlocksMap] = useState<Record<number, CanvasBlock[]>>({})
   const [originalImageUrls, setOriginalImageUrls] = useState<string[]>([])
+  const [generatingTemplate, setGeneratingTemplate] = useState(false)
 
   // Load existing post data in edit mode
   useEffect(() => {
@@ -181,6 +184,77 @@ function NewPostPage() {
       alert(error instanceof Error ? error.message : "Failed to generate image")
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function applyTemplateBlocks(blocks: CanvasBlock[]) {
+    // If no image yet, create a blank white canvas as placeholder
+    if (!selectedImage) {
+      const canvas = document.createElement("canvas")
+      canvas.width = 1080
+      canvas.height = 1080
+      const ctx = canvas.getContext("2d")!
+      ctx.fillStyle = "#ffffff"
+      ctx.fillRect(0, 0, 1080, 1080)
+      const blankDataUrl = canvas.toDataURL("image/png")
+      const blob = await (await fetch(blankDataUrl)).blob()
+      const file = new File([blob], "blank.png", { type: "image/png" })
+      const formData = new FormData()
+      formData.append("file", file)
+      const uploadRes = await fetch("/api/instagram/upload", {
+        method: "POST",
+        body: formData,
+      })
+      if (!uploadRes.ok) throw new Error("Failed to create canvas")
+      const uploadData = await uploadRes.json()
+      setSelectedImage(uploadData.imageUrl)
+      setCarouselImages([uploadData.imageUrl])
+    }
+    const idx = selectedImage ? carouselIndex : 0
+    setOverlayBlocksMap((prev) => ({ ...prev, [idx]: blocks }))
+    setEditingTextIndex(idx)
+  }
+
+  async function applyPresetTemplate(templateId: string) {
+    const tpl = templates.find((t) => t.id === templateId)
+    if (!tpl) return
+    try {
+      await applyTemplateBlocks(hydrateTemplate(tpl))
+    } catch (error) {
+      console.error("Failed to apply template:", error)
+      alert("Failed to apply template")
+    }
+  }
+
+  async function generateTemplate() {
+    if (!customPrompt.trim()) return
+
+    setGeneratingTemplate(true)
+    try {
+      const res = await fetch("/api/instagram/template", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: customPrompt }),
+      })
+
+      if (!res.ok) {
+        let message = "Template generation failed"
+        try {
+          const errData = await res.json()
+          message = errData.error || message
+        } catch { /* Response wasn't JSON */ }
+        throw new Error(message)
+      }
+
+      const data = await res.json()
+      if (data.blocks?.length) {
+        await applyTemplateBlocks(data.blocks)
+      }
+    } catch (error) {
+      console.error("Failed to generate template:", error)
+      alert(error instanceof Error ? error.message : "Failed to generate template")
+    } finally {
+      setGeneratingTemplate(false)
     }
   }
 
@@ -327,8 +401,8 @@ function NewPostPage() {
             : {
                 image_url: carouselImages[0] || selectedImage,
                 caption,
-                likes_count: Math.floor(Math.random() * 300) + 100,
-                comments_count: Math.floor(Math.random() * 20) + 5,
+                likes_count: Math.floor(Math.random() * 30) + 10,
+                comments_count: Math.floor(Math.random() * 5) + 1,
                 carousel_images: carouselImages.length > 1 ? carouselImages : [],
                 overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
@@ -678,6 +752,14 @@ function NewPostPage() {
                 <Link2 className="w-4 h-4 mr-2" />
                 Image URL
               </Button>
+              <Button
+                variant={activeTab === "template" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveTab("template")}
+              >
+                <Wand2 className="w-4 h-4 mr-2" />
+                Template
+              </Button>
             </div>
 
             {activeTab === "upload" ? (
@@ -708,6 +790,57 @@ function NewPostPage() {
                     }}
                   />
                 </label>
+              </div>
+            ) : activeTab === "template" ? (
+              <div className="space-y-4">
+                {/* Pre-made templates */}
+                <div>
+                  <p className="text-sm font-medium text-neutral-700 mb-2">Quick start</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {templates.map((tpl) => (
+                      <button
+                        key={tpl.id}
+                        onClick={() => applyPresetTemplate(tpl.id)}
+                        className="border border-neutral-200 rounded-lg hover:border-neutral-400 overflow-hidden transition-colors"
+                      >
+                        <div className="aspect-square">
+                          <TemplateThumbnail blocks={tpl.blocks} />
+                        </div>
+                        <div className="p-1.5">
+                          <span className="text-[11px] font-medium text-neutral-700 block truncate">{tpl.name}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* AI generate */}
+                <div className="border-t border-neutral-200 pt-4">
+                  <p className="text-sm font-medium text-neutral-700 mb-2">Or describe your own</p>
+                <Textarea
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  placeholder="Bold announcement with headline and call to action..."
+                  className="mb-3 min-h-[100px]"
+                />
+                <Button
+                  onClick={generateTemplate}
+                  disabled={generatingTemplate || !customPrompt.trim()}
+                  className="w-full"
+                >
+                  {generatingTemplate ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="w-4 h-4 mr-2" />
+                      Generate Template
+                    </>
+                  )}
+                </Button>
+                </div>
               </div>
             ) : activeTab === "url" ? (
               <div>
@@ -831,6 +964,7 @@ function NewPostPage() {
                         <>
                           <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
                           <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
+                          <option value="fal-ai/flux/dev">FLUX Dev</option>
                         </>
                       )}
                     </select>

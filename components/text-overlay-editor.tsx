@@ -8,7 +8,9 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Plus, Trash2, Download, Type, Bold, Italic, AlignLeft, AlignCenter, AlignRight,
   Square, Circle, ArrowRight, ImagePlus, ChevronUp, ChevronDown, Copy, Eraser, Loader2,
+  LayoutTemplate,
 } from "lucide-react"
+import { templates, hydrateTemplate } from "@/lib/templates"
 
 interface TextBlock {
   id: string
@@ -274,6 +276,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [inlineEditId, setInlineEditId] = useState<string | null>(null)
   const [removingBgId, setRemovingBgId] = useState<string | null>(null)
+  const [showTemplates, setShowTemplates] = useState(false)
   const transformerRef = useRef<Konva.Transformer>(null)
   const [imgDims, setImgDims] = useState({ x: 0, y: 0, w: CANVAS_SIZE, h: CANVAS_SIZE })
   const [imgError, setImgError] = useState(false)
@@ -797,6 +800,38 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
             e.target.value = ""
           }}
         />
+      </div>
+
+      {/* Template picker */}
+      <div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => setShowTemplates(!showTemplates)}
+        >
+          <LayoutTemplate className="w-4 h-4 mr-1.5" />
+          {showTemplates ? "Hide Templates" : "Templates"}
+        </Button>
+        {showTemplates && (
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {templates.map((tpl) => (
+              <button
+                key={tpl.id}
+                onClick={() => {
+                  const hydrated = hydrateTemplate(tpl)
+                  setBlocks((prev) => [...prev, ...hydrated])
+                  setSelectedId(null)
+                  setShowTemplates(false)
+                }}
+                className="p-2 text-left border border-neutral-200 rounded-lg hover:border-neutral-400 hover:bg-neutral-50 transition-colors"
+              >
+                <span className="text-xs font-medium text-neutral-800 block truncate">{tpl.name}</span>
+                <span className="text-[10px] text-neutral-400">{tpl.category}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Background filters — shown when nothing selected */}
