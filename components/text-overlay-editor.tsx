@@ -103,12 +103,13 @@ interface ImageBlock {
   cornerRadius: number
 }
 
-type CanvasBlock = TextBlock | ShapeBlock | EllipseBlock | LineBlock | ImageBlock
+export type CanvasBlock = TextBlock | ShapeBlock | EllipseBlock | LineBlock | ImageBlock
 
 interface TextOverlayEditorProps {
   imageUrl: string
-  onExport: (dataUrl: string) => void
+  onExport: (dataUrl: string, blocks: CanvasBlock[]) => void
   onCancel: () => void
+  initialBlocks?: CanvasBlock[]
 }
 
 const CANVAS_SIZE = 1080
@@ -258,15 +259,25 @@ const FONT_FAMILIES = [
   "Comic Sans MS",
 ]
 
-export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayEditorProps) {
+export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks }: TextOverlayEditorProps) {
   const stageRef = useRef<Konva.Stage>(null)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
-  const [blocks, setBlocks] = useState<CanvasBlock[]>([])
+  const [blocks, setBlocks] = useState<CanvasBlock[]>(initialBlocks || [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const [imgDims, setImgDims] = useState({ x: 0, y: 0, w: CANVAS_SIZE, h: CANVAS_SIZE })
   const [imgError, setImgError] = useState(false)
-  const idCounter = useRef(0)
+  // Start counter above any existing block IDs to avoid collisions
+  const getInitialCounter = () => {
+    if (!initialBlocks?.length) return 0
+    let max = 0
+    for (const b of initialBlocks) {
+      const num = parseInt(b.id.split("-").pop() || "0", 10)
+      if (num > max) max = num
+    }
+    return max
+  }
+  const idCounter = useRef(getInitialCounter())
   const nextId = (prefix: string) => `${prefix}-${++idCounter.current}`
   const overlayFileRef = useRef<HTMLInputElement>(null)
   const bgImageRef = useRef<Konva.Image>(null)
@@ -493,8 +504,8 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
       mimeType: "image/png",
     })
     setSelectedId(null)
-    onExport(dataUrl)
-  }, [onExport])
+    onExport(dataUrl, blocks)
+  }, [onExport, blocks])
 
   const selectedBlock = blocks.find((b) => b.id === selectedId)
   const scale = DISPLAY_SIZE / CANVAS_SIZE

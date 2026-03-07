@@ -26,6 +26,7 @@ import {
   Palette,
   Download,
   ClipboardCopy,
+  Pencil,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -465,7 +466,21 @@ export default function InstagramPage() {
     <div className="min-h-screen bg-white">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-neutral-200">
-        <div className="max-w-[935px] mx-auto px-4 md:px-5 py-3 flex items-center justify-between">
+        {/* Mobile header */}
+        <div className="md:hidden flex items-center justify-between px-4 py-2.5">
+          <Image src="/instagram-logo.png" alt="Instagram" width={110} height={32} className="h-7 w-auto" />
+          <div className="flex items-center gap-5">
+            <Link href="/new">
+              <Plus className="w-6 h-6" />
+            </Link>
+            <Link href="/calendar">
+              <Heart className="w-6 h-6" />
+            </Link>
+            <Send className="w-6 h-6 cursor-pointer opacity-50" />
+          </div>
+        </div>
+        {/* Desktop header */}
+        <div className="hidden md:flex max-w-[935px] mx-auto px-5 py-3 items-center justify-between">
           <Image
             src="/instagram-logo.png"
             alt="Instagram"
@@ -488,109 +503,127 @@ export default function InstagramPage() {
 
       <main className="max-w-[935px] mx-auto">
         {/* Profile Header */}
-        <div className="px-4 py-6 md:py-10 md:px-0">
-          <div className="flex items-start gap-6 md:gap-20">
+        <div className="px-4 pt-2 pb-1 md:pt-6 md:pb-2 md:px-0">
+          {/* Mobile profile top row: avatar + stats */}
+          <div className="flex items-center gap-5 md:hidden">
             <div className="flex-shrink-0">
               <button
                 onClick={() => setShowAvatarPicker(true)}
-                className="relative group w-20 h-20 md:w-36 md:h-36 rounded-full bg-neutral-100 border-2 border-neutral-200 flex items-center justify-center overflow-hidden cursor-pointer"
+                className="relative group w-20 h-20 rounded-full bg-neutral-100 border-2 border-neutral-200 flex items-center justify-center overflow-hidden cursor-pointer"
               >
                 {profile.avatarUrl ? (
-                  <Image
-                    src={profile.avatarUrl}
-                    alt="Profile"
-                    width={144}
-                    height={144}
-                    className="w-full h-full object-cover rounded-full"
-                  />
+                  <Image src={profile.avatarUrl} alt="Profile" width={80} height={80} className="w-full h-full object-cover rounded-full" />
                 ) : (
-                  <span className="text-2xl md:text-4xl font-bold tracking-tighter text-neutral-400">
-                    {profile.username.charAt(0).toUpperCase()}
-                  </span>
+                  <span className="text-2xl font-bold tracking-tighter text-neutral-400">{profile.username.charAt(0).toUpperCase()}</span>
                 )}
                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full">
-                  <Camera className="w-6 h-6 md:w-8 md:h-8 text-white" />
+                  <Camera className="w-6 h-6 text-white" />
+                </div>
+              </button>
+            </div>
+            <div className="flex-1 flex items-center justify-around">
+              <div className="text-center">
+                <p className="font-semibold text-lg">{posts.length || profile.posts_count}</p>
+                <p className="text-xs text-neutral-500">posts</p>
+              </div>
+              <div className="text-center cursor-pointer" onClick={() => startEditing("followers", profile.followers)}>
+                <p className="font-semibold text-lg">{profile.followers}</p>
+                <p className="text-xs text-neutral-500">followers</p>
+              </div>
+              <div className="text-center cursor-pointer" onClick={() => startEditing("following", profile.following)}>
+                <p className="font-semibold text-lg">{profile.following}</p>
+                <p className="text-xs text-neutral-500">following</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile bio */}
+          <div className="mt-3 md:hidden">
+            <p className="font-semibold text-sm">{profile.username}</p>
+            {editingField === "bio" ? (
+              <div className="mt-1">
+                <Textarea value={editValue} onChange={(e) => setEditValue(e.target.value)} className="text-sm min-h-[60px]" />
+                <div className="flex gap-2 mt-2">
+                  <Button size="sm" onClick={() => saveField("bio", editValue)}>Save</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditingField(null)}>Cancel</Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm whitespace-pre-line mt-0.5 cursor-pointer" onClick={() => startEditing("bio", profile.bio)}>
+                {profile.bio}
+              </p>
+            )}
+          </div>
+
+          {/* Mobile buttons — full width */}
+          <div className="flex gap-1.5 mt-2 md:hidden">
+            <Button size="sm" className="flex-1 bg-neutral-100 text-neutral-900 hover:bg-neutral-200 text-[13px] font-semibold h-8 rounded-lg">
+              Following
+            </Button>
+            <Button size="sm" className="flex-1 bg-neutral-100 text-neutral-900 hover:bg-neutral-200 text-[13px] font-semibold h-8 rounded-lg">
+              Message
+            </Button>
+          </div>
+
+          {/* Desktop profile layout */}
+          <div className="hidden md:flex items-start gap-16">
+            <div className="flex-shrink-0">
+              <button
+                onClick={() => setShowAvatarPicker(true)}
+                className="relative group w-36 h-36 rounded-full bg-neutral-100 border-2 border-neutral-200 flex items-center justify-center overflow-hidden cursor-pointer"
+              >
+                {profile.avatarUrl ? (
+                  <Image src={profile.avatarUrl} alt="Profile" width={144} height={144} className="w-full h-full object-cover rounded-full" />
+                ) : (
+                  <span className="text-4xl font-bold tracking-tighter text-neutral-400">{profile.username.charAt(0).toUpperCase()}</span>
+                )}
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full">
+                  <Camera className="w-8 h-8 text-white" />
                 </div>
               </button>
             </div>
 
-            {/* Profile Info */}
             <div className="flex-1 min-w-0">
-              {/* Username row */}
               <div className="flex items-center gap-2 mb-4 flex-wrap">
                 {editingField === "username" ? (
-                  <div className="hidden md:flex items-center gap-1">
-                    <Input
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      className="h-8 w-32 text-xl"
-                      autoFocus
-                    />
-                    <Button size="sm" onClick={() => saveField("username", editValue)}>
-                      Save
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditingField(null)}>
-                      Cancel
-                    </Button>
+                  <div className="flex items-center gap-1">
+                    <Input value={editValue} onChange={(e) => setEditValue(e.target.value)} className="h-8 w-32 text-xl" autoFocus />
+                    <Button size="sm" onClick={() => saveField("username", editValue)}>Save</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingField(null)}>Cancel</Button>
                   </div>
                 ) : (
                   <h1
-                    className="hidden md:block text-xl font-normal cursor-pointer hover:bg-neutral-50 px-1 -mx-1 rounded"
+                    className="text-xl font-normal cursor-pointer hover:bg-neutral-50 px-1 -mx-1 rounded"
                     onClick={() => startEditing("username", profile.username)}
                   >
                     {profile.username}
                     {profile.isVerified && <VerifiedBadge className="w-5 h-5 inline ml-1" />}
                   </h1>
                 )}
-                <Button
-                  size="sm"
-                  className="ml-2 bg-neutral-100 text-neutral-900 hover:bg-neutral-200 text-sm font-semibold px-4"
-                >
-                  Following
-                </Button>
-                <Button size="sm" variant="outline" className="text-sm font-semibold px-4 bg-transparent">
-                  Message
-                </Button>
+                <Button size="sm" className="ml-2 bg-neutral-100 text-neutral-900 hover:bg-neutral-200 text-sm font-semibold px-4">Following</Button>
+                <Button size="sm" variant="outline" className="text-sm font-semibold px-4 bg-transparent">Message</Button>
               </div>
 
-              {/* Stats row - desktop */}
-              <div className="hidden md:flex items-center gap-8 mb-4">
-                <span>
-                  <strong>{posts.length || profile.posts_count}</strong> posts
-                </span>
+              <div className="flex items-center gap-8 mb-4">
+                <span><strong>{posts.length || profile.posts_count}</strong> posts</span>
                 <EditableField field="followers" value={profile.followers} label="followers" {...editableFieldProps} />
                 <EditableField field="following" value={profile.following} label="following" {...editableFieldProps} />
               </div>
 
-              {/* Bio - desktop */}
-              <div className="hidden md:block">
-                <p
-                  className="font-semibold text-sm cursor-pointer hover:bg-neutral-50 rounded px-1 -mx-1"
-                  onClick={() => startEditing("username", profile.username)}
-                >
+              <div>
+                <p className="font-semibold text-sm cursor-pointer hover:bg-neutral-50 rounded px-1 -mx-1" onClick={() => startEditing("username", profile.username)}>
                   {profile.username}
                 </p>
                 {editingField === "bio" ? (
                   <div className="mt-1">
-                    <Textarea
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      className="text-sm min-h-[60px]"
-                    />
+                    <Textarea value={editValue} onChange={(e) => setEditValue(e.target.value)} className="text-sm min-h-[60px]" />
                     <div className="flex gap-2 mt-2">
-                      <Button size="sm" onClick={() => saveField("bio", editValue)}>
-                        Save
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setEditingField(null)}>
-                        Cancel
-                      </Button>
+                      <Button size="sm" onClick={() => saveField("bio", editValue)}>Save</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingField(null)}>Cancel</Button>
                     </div>
                   </div>
                 ) : (
-                  <p
-                    className="text-sm whitespace-pre-line mt-1 cursor-pointer hover:bg-neutral-50 p-1 -m-1 rounded"
-                    onClick={() => startEditing("bio", profile.bio)}
-                  >
+                  <p className="text-sm whitespace-pre-line mt-1 cursor-pointer hover:bg-neutral-50 p-1 -m-1 rounded" onClick={() => startEditing("bio", profile.bio)}>
                     {profile.bio}
                   </p>
                 )}
@@ -598,53 +631,8 @@ export default function InstagramPage() {
             </div>
           </div>
 
-          {/* Bio - mobile */}
-          <div className="mt-4 md:hidden">
-            <p className="font-semibold text-sm">{profile.username}</p>
-            {editingField === "bio" ? (
-              <div className="mt-1">
-                <Textarea
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  className="text-sm min-h-[60px]"
-                />
-                <div className="flex gap-2 mt-2">
-                  <Button size="sm" onClick={() => saveField("bio", editValue)}>
-                    Save
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditingField(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <p
-                className="text-sm whitespace-pre-line mt-1 cursor-pointer"
-                onClick={() => startEditing("bio", profile.bio)}
-              >
-                {profile.bio}
-              </p>
-            )}
-          </div>
-
-          {/* Stats row - mobile */}
-          <div className="flex items-center justify-around py-3 border-t border-neutral-200 mt-4 md:hidden">
-            <div className="text-center">
-              <p className="font-semibold">{posts.length || profile.posts_count}</p>
-              <p className="text-xs text-neutral-500">posts</p>
-            </div>
-            <div className="text-center cursor-pointer" onClick={() => startEditing("followers", profile.followers)}>
-              <p className="font-semibold">{profile.followers}</p>
-              <p className="text-xs text-neutral-500">followers</p>
-            </div>
-            <div className="text-center cursor-pointer" onClick={() => startEditing("following", profile.following)}>
-              <p className="font-semibold">{profile.following}</p>
-              <p className="text-xs text-neutral-500">following</p>
-            </div>
-          </div>
-
-          {/* New Post shortcut */}
-          <div className="flex gap-4 mt-4 md:mt-6">
+          {/* New Post shortcut / stories row */}
+          <div className="flex gap-4 mt-2 md:mt-6">
             <Link href="/new" className="flex flex-col items-center gap-1 flex-shrink-0">
               <div className="w-16 h-16 md:w-20 md:h-20 rounded-full border-2 border-neutral-200 border-dashed bg-neutral-50 flex items-center justify-center">
                 <Plus className="w-6 h-6 text-neutral-400" />
@@ -787,58 +775,76 @@ export default function InstagramPage() {
       {/* Post Modal */}
       <Dialog open={!!selectedPost} onOpenChange={() => setSelectedPost(null)}>
         <DialogContent
-          className="!max-w-5xl !w-[95vw] !p-0 !gap-0 overflow-hidden bg-white border-0 !rounded-none md:!rounded-lg"
+          className="!max-w-5xl !w-full md:!w-[95vw] !p-0 !gap-0 bg-white border-0 !rounded-none md:!rounded-lg !top-0 !left-0 !translate-x-0 !translate-y-0 md:!top-1/2 md:!left-1/2 md:!-translate-x-1/2 md:!-translate-y-1/2 !h-[100dvh] md:!h-auto md:!max-h-none"
           showCloseButton={false}
         >
           <DialogTitle className="sr-only">Post Detail</DialogTitle>
-          {selectedPost && (
-            <div className="flex flex-col md:flex-row h-auto md:h-[90vh] md:max-h-[600px]">
-              {/* Left: Square image / carousel */}
-              <div className="relative w-full md:w-[600px] aspect-square flex-shrink-0 bg-black">
-                <button
-                  onClick={() => setSelectedPost(null)}
-                  className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
-                >
-                  ✕
+          {selectedPost && (() => {
+            const modalImages = selectedPost.carousel_images?.length > 0
+              ? selectedPost.carousel_images
+              : selectedPost.image_url ? [selectedPost.image_url] : []
+            const currentModalImg = modalImages[modalCarouselIndex] || null
+            return (
+            <>
+            {/* ===== MOBILE LAYOUT ===== */}
+            <div className="flex flex-col h-[100dvh] md:hidden">
+              {/* Mobile header bar */}
+              <div className="flex items-center gap-3 px-4 py-2.5 border-b border-neutral-200 flex-shrink-0">
+                <button onClick={() => setSelectedPost(null)}>
+                  <ChevronLeftIcon className="w-6 h-6" />
                 </button>
-                {(() => {
-                  const images = selectedPost.carousel_images?.length > 1
-                    ? selectedPost.carousel_images
-                    : selectedPost.image_url ? [selectedPost.image_url] : []
-                  const currentImg = images[modalCarouselIndex] || null
-                  return currentImg ? (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="w-7 h-7 rounded-full bg-neutral-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {profile.avatarUrl ? (
+                      <Image src={profile.avatarUrl} alt="Avatar" width={28} height={28} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-[10px] font-bold">{profile.username.charAt(0).toUpperCase()}</span>
+                    )}
+                  </div>
+                  <span className="font-semibold text-sm">{profile.username}</span>
+                  {profile.isVerified && <VerifiedBadge className="w-3.5 h-3.5" />}
+                </div>
+                <button>
+                  <MoreHorizontal className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable content */}
+              <div className="flex-1 overflow-y-auto">
+                {/* Square image */}
+                <div className="relative w-full aspect-square bg-black">
+                  {currentModalImg ? (
                     <>
                       <Image
-                        src={currentImg}
+                        src={currentModalImg}
                         alt={selectedPost.caption || "Post"}
                         fill
-                        sizes="(max-width: 768px) 100vw, 600px"
-                        className="object-contain"
+                        sizes="100vw"
+                        className="object-cover"
                         unoptimized
                       />
-                      {images.length > 1 && (
+                      {modalImages.length > 1 && (
                         <>
                           {modalCarouselIndex > 0 && (
                             <button
                               onClick={() => setModalCarouselIndex(modalCarouselIndex - 1)}
-                              className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+                              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center"
                             >
                               <ChevronLeftIcon className="w-5 h-5" />
                             </button>
                           )}
-                          {modalCarouselIndex < images.length - 1 && (
+                          {modalCarouselIndex < modalImages.length - 1 && (
                             <button
                               onClick={() => setModalCarouselIndex(modalCarouselIndex + 1)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center"
                             >
                               <ChevronRight className="w-5 h-5" />
                             </button>
                           )}
                           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                            {images.map((_, i) => (
-                              <button
+                            {modalImages.map((_, i) => (
+                              <div
                                 key={i}
-                                onClick={() => setModalCarouselIndex(i)}
                                 className={`w-1.5 h-1.5 rounded-full transition-colors ${
                                   i === modalCarouselIndex ? "bg-[#0095f6]" : "bg-white/60"
                                 }`}
@@ -849,26 +855,188 @@ export default function InstagramPage() {
                       )}
                     </>
                   ) : (
+                    <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
+                      <span className="text-neutral-400">No image</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions row */}
+                <div className="px-3 pt-2.5 pb-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <Heart className="w-6 h-6" />
+                      <MessageCircle className="w-6 h-6" />
+                      <Send className="w-6 h-6" />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        title="Copy caption"
+                        onClick={() => {
+                          if (selectedPost.caption) {
+                            navigator.clipboard.writeText(selectedPost.caption)
+                            setCopiedCaption(true)
+                            setTimeout(() => setCopiedCaption(false), 2000)
+                          }
+                        }}
+                        className="relative"
+                      >
+                        <ClipboardCopy className="w-5 h-5" />
+                        {copiedCaption && (
+                          <span className="absolute -top-7 left-1/2 -translate-x-1/2 text-xs bg-neutral-900 text-white px-2 py-0.5 rounded whitespace-nowrap">
+                            Copied!
+                          </span>
+                        )}
+                      </button>
+                      <a
+                        title="Download image"
+                        href={modalImages[modalCarouselIndex] || "#"}
+                        download
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Download className="w-5 h-5" />
+                      </a>
+                      <button onClick={() => deletePost(selectedPost.id)}>
+                        <Trash2 className="w-5 h-5 text-neutral-400" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Likes */}
+                <div className="px-3 pb-1">
+                  <p className="font-semibold text-sm">{selectedPost.likes_count.toLocaleString()} likes</p>
+                </div>
+
+                {/* Caption */}
+                <div className="px-3 pb-2">
+                  {isEditing ? (
+                    <div>
+                      <Textarea
+                        value={editCaption}
+                        onChange={(e) => setEditCaption(e.target.value)}
+                        className="text-sm min-h-[80px] mb-2"
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={saveCaption}>Save</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm">
+                        <span className="font-semibold mr-1">{profile.username}</span>
+                        {selectedPost.caption}
+                      </p>
+                      <p className="text-[10px] text-neutral-400 uppercase mt-1">
+                        {formatTimeAgo(selectedPost.posted_at)} ago
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                {/* Tags */}
+                <div className="px-3 py-2 border-t border-neutral-100">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Tag className="w-3 h-3 text-neutral-400" />
+                    <span className="text-xs font-medium text-neutral-500">Tags</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    {editTags.map((tag) => (
+                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
+                        {tag}
+                        <button onClick={() => removeTag(tag)} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-1.5">
+                    <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTag()} placeholder="Add tag..." className="h-7 text-xs flex-1" />
+                    <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addTag} disabled={!newTag.trim()}>Add</Button>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div className="px-3 py-2 border-t border-neutral-100">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <StickyNote className="w-3 h-3 text-neutral-400" />
+                    <span className="text-xs font-medium text-neutral-500">Notes</span>
+                  </div>
+                  <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} onBlur={saveNotes} placeholder="Add internal notes..." className="text-xs min-h-[50px] resize-none" />
+                </div>
+
+                {/* Edit/Delete controls */}
+                <div className="px-3 py-3 border-t border-neutral-100 flex items-center gap-2">
+                  <Link href={`/new?edit=${selectedPost.id}`} className="flex-1">
+                    <Button size="sm" variant="outline" className="w-full"><Pencil className="w-3.5 h-3.5 mr-1.5" />Edit Post</Button>
+                  </Link>
+                  <Button size="sm" variant="outline" onClick={() => setIsEditing(true)}>Edit Caption</Button>
+                  <Button size="sm" variant="outline" onClick={() => deletePost(selectedPost.id)} className="text-red-500 hover:text-red-600 hover:bg-red-50">Delete</Button>
+                </div>
+              </div>
+            </div>
+
+            {/* ===== DESKTOP LAYOUT ===== */}
+            <div className="hidden md:flex md:flex-row h-auto md:h-[90vh] md:max-h-[600px]">
+              {/* Left: Square image / carousel */}
+              <div className="relative w-[600px] aspect-square flex-shrink-0 bg-black">
+                {currentModalImg ? (
+                  <>
+                    <Image
+                      src={currentModalImg}
+                      alt={selectedPost.caption || "Post"}
+                      fill
+                      sizes="600px"
+                      className="object-contain"
+                      unoptimized
+                    />
+                    {modalImages.length > 1 && (
+                      <>
+                        {modalCarouselIndex > 0 && (
+                          <button
+                            onClick={() => setModalCarouselIndex(modalCarouselIndex - 1)}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+                          >
+                            <ChevronLeftIcon className="w-5 h-5" />
+                          </button>
+                        )}
+                        {modalCarouselIndex < modalImages.length - 1 && (
+                          <button
+                            onClick={() => setModalCarouselIndex(modalCarouselIndex + 1)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+                        )}
+                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                          {modalImages.map((_, i) => (
+                            <button
+                              key={i}
+                              onClick={() => setModalCarouselIndex(i)}
+                              className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                                i === modalCarouselIndex ? "bg-[#0095f6]" : "bg-white/60"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
                   <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
                     <span className="text-neutral-400">No image</span>
                   </div>
-                  )
-                })()}
+                )}
               </div>
 
               {/* Right: Comment panel */}
-              <div className="flex flex-col w-full md:w-[335px] md:min-w-[335px] h-full">
+              <div className="flex flex-col w-[335px] min-w-[335px] h-full overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center gap-3 p-3 border-b border-neutral-200">
                   <div className="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center overflow-hidden">
                     {profile.avatarUrl ? (
-                      <Image
-                        src={profile.avatarUrl}
-                        alt="Avatar"
-                        width={32}
-                        height={32}
-                        className="w-full h-full object-cover"
-                      />
+                      <Image src={profile.avatarUrl} alt="Avatar" width={32} height={32} className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-xs font-bold">{profile.username.charAt(0).toUpperCase()}</span>
                     )}
@@ -885,13 +1053,7 @@ export default function InstagramPage() {
                   <div className="flex gap-3">
                     <div className="w-8 h-8 rounded-full bg-neutral-200 flex-shrink-0 flex items-center justify-center overflow-hidden">
                       {profile.avatarUrl ? (
-                        <Image
-                          src={profile.avatarUrl}
-                          alt="Avatar"
-                          width={32}
-                          height={32}
-                          className="w-full h-full object-cover"
-                        />
+                        <Image src={profile.avatarUrl} alt="Avatar" width={32} height={32} className="w-full h-full object-cover" />
                       ) : (
                         <span className="text-xs font-bold">{profile.username.charAt(0).toUpperCase()}</span>
                       )}
@@ -906,17 +1068,13 @@ export default function InstagramPage() {
                             autoFocus
                           />
                           <div className="flex gap-2">
-                            <Button size="sm" onClick={saveCaption}>
-                              Save
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)}>
-                              Cancel
-                            </Button>
+                            <Button size="sm" onClick={saveCaption}>Save</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)}>Cancel</Button>
                           </div>
                         </div>
                       ) : (
                         <>
-                          <p className="text-sm">
+                          <p className="text-sm break-words">
                             <span className="font-semibold mr-1">{profile.username}</span>
                             {selectedPost.caption}
                           </p>
@@ -937,44 +1095,24 @@ export default function InstagramPage() {
                     </div>
                     <div className="flex flex-wrap gap-1.5 mb-1.5">
                       {editTags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full"
-                        >
+                        <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
                           {tag}
-                          <button onClick={() => removeTag(tag)} className="hover:text-blue-900">
-                            <X className="w-3 h-3" />
-                          </button>
+                          <button onClick={() => removeTag(tag)} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
                         </span>
                       ))}
                     </div>
                     <div className="flex gap-1.5">
-                      <Input
-                        value={newTag}
-                        onChange={(e) => setNewTag(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && addTag()}
-                        placeholder="Add tag..."
-                        className="h-7 text-xs flex-1"
-                      />
-                      <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addTag} disabled={!newTag.trim()}>
-                        Add
-                      </Button>
+                      <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTag()} placeholder="Add tag..." className="h-7 text-xs flex-1" />
+                      <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addTag} disabled={!newTag.trim()}>Add</Button>
                     </div>
                   </div>
-
                   {/* Notes */}
                   <div>
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <StickyNote className="w-3 h-3 text-neutral-400" />
                       <span className="text-xs font-medium text-neutral-500">Notes</span>
                     </div>
-                    <Textarea
-                      value={editNotes}
-                      onChange={(e) => setEditNotes(e.target.value)}
-                      onBlur={saveNotes}
-                      placeholder="Add internal notes..."
-                      className="text-xs min-h-[50px] resize-none"
-                    />
+                    <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} onBlur={saveNotes} placeholder="Add internal notes..." className="text-xs min-h-[50px] resize-none" />
                   </div>
                 </div>
 
@@ -1007,22 +1145,16 @@ export default function InstagramPage() {
                       </button>
                       <a
                         title="Download image"
-                        href={(() => {
-                          const images = selectedPost.carousel_images?.length > 1
-                            ? selectedPost.carousel_images
-                            : selectedPost.image_url ? [selectedPost.image_url] : []
-                          return images[modalCarouselIndex] || "#"
-                        })()}
+                        href={modalImages[modalCarouselIndex] || "#"}
                         download
                         target="_blank"
                         rel="noopener noreferrer"
                       >
                         <Download className="w-5 h-5 cursor-pointer hover:text-neutral-500" />
                       </a>
-                      <Trash2
-                        className="w-5 h-5 cursor-pointer hover:text-red-500"
-                        onClick={() => deletePost(selectedPost.id)}
-                      />
+                      <button onClick={() => deletePost(selectedPost.id)}>
+                        <Trash2 className="w-5 h-5 cursor-pointer hover:text-red-500" />
+                      </button>
                     </div>
                   </div>
                   <p className="font-semibold text-sm">{selectedPost.likes_count.toLocaleString()} likes</p>
@@ -1039,21 +1171,17 @@ export default function InstagramPage() {
 
                 {/* Edit/Delete controls */}
                 <div className="border-t border-neutral-200 p-3 flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setIsEditing(true)} className="flex-1">
-                    Edit Caption
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => deletePost(selectedPost.id)}
-                    className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                  >
-                    Delete
-                  </Button>
+                  <Link href={`/new?edit=${selectedPost.id}`} className="flex-1">
+                    <Button size="sm" variant="outline" className="w-full"><Pencil className="w-3.5 h-3.5 mr-1.5" />Edit Post</Button>
+                  </Link>
+                  <Button size="sm" variant="outline" onClick={() => setIsEditing(true)}>Edit Caption</Button>
+                  <Button size="sm" variant="outline" onClick={() => deletePost(selectedPost.id)} className="text-red-500 hover:text-red-600 hover:bg-red-50">Delete</Button>
                 </div>
               </div>
             </div>
-          )}
+            </>
+            )
+          })()}
         </DialogContent>
       </Dialog>
 

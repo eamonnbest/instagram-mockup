@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { image_url, caption, likes_count = 0, comments_count = 0, notes, tags, carousel_images, scheduled_for } = body
+  const { image_url, caption, likes_count = 0, comments_count = 0, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url } = body
 
   const { data: maxOrder } = await getSupabase()
     .from("instagram_posts")
@@ -57,6 +57,8 @@ export async function POST(request: Request) {
       tags: tags || [],
       carousel_images: carousel_images || [],
       scheduled_for: scheduled_for || null,
+      overlay_blocks: overlay_blocks || [],
+      original_image_url: original_image_url || null,
     })
     .select()
     .single()
@@ -77,13 +79,14 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { id, caption, likes_count, comments_count, display_order, notes, tags, carousel_images, scheduled_for } = body
+  const { id, image_url, caption, likes_count, comments_count, display_order, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url } = body
 
   if (!id) {
     return NextResponse.json({ error: "Missing post ID" }, { status: 400 })
   }
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (image_url !== undefined) updates.image_url = image_url
   if (caption !== undefined) updates.caption = caption
   if (likes_count !== undefined) updates.likes_count = likes_count
   if (comments_count !== undefined) updates.comments_count = comments_count
@@ -92,6 +95,8 @@ export async function PATCH(request: Request) {
   if (tags !== undefined) updates.tags = tags
   if (carousel_images !== undefined) updates.carousel_images = carousel_images
   if (scheduled_for !== undefined) updates.scheduled_for = scheduled_for
+  if (overlay_blocks !== undefined) updates.overlay_blocks = overlay_blocks
+  if (original_image_url !== undefined) updates.original_image_url = original_image_url
 
   const { data: post, error } = await getSupabase().from("instagram_posts").update(updates).eq("id", id).select().single()
 

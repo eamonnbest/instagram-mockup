@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type } from "lucide-react"
 import dynamic from "next/dynamic"
+import type { CanvasBlock } from "@/components/text-overlay-editor"
 
 const TextOverlayEditor = dynamic(
   () => import("@/components/text-overlay-editor").then((m) => m.TextOverlayEditor),
@@ -15,13 +16,24 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
 
-export default function NewPostPage() {
+export default function NewPostPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>}>
+      <NewPostPage />
+    </Suspense>
+  )
+}
+
+function NewPostPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const editPostId = searchParams.get("edit")
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [carouselImages, setCarouselImages] = useState<string[]>([])
   const [carouselIndex, setCarouselIndex] = useState(0)
   const [addingMore, setAddingMore] = useState(false)
   const [caption, setCaption] = useState("")
+  const [loadingEdit, setLoadingEdit] = useState(!!editPostId)
   const [imageUrl, setImageUrl] = useState("")
   const [customPrompt, setCustomPrompt] = useState("")
   const [generating, setGenerating] = useState(false)
@@ -38,9 +50,58 @@ export default function NewPostPage() {
   const [captionContext, setCaptionContext] = useState("")
   const [imageModel, setImageModel] = useState("fal-ai/nano-banana-2")
   const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null)
+  const [exportingOverlay, setExportingOverlay] = useState(false)
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
   const [uploadingReference, setUploadingReference] = useState(false)
   const [dragOverRef, setDragOverRef] = useState(false)
+  // Per-image overlay blocks (keyed by carousel index) and original (pre-overlay) image URLs
+  const [overlayBlocksMap, setOverlayBlocksMap] = useState<Record<number, CanvasBlock[]>>({})
+  const [originalImageUrls, setOriginalImageUrls] = useState<string[]>([])
+
+  // Load existing post data in edit mode
+  useEffect(() => {
+    if (!editPostId) return
+    async function loadPost() {
+      try {
+        const res = await fetch("/api/instagram/posts")
+        if (!res.ok) throw new Error("Failed to fetch")
+        const data = await res.json()
+        const post = data.posts?.find((p: { id: string }) => p.id === editPostId)
+        if (post) {
+          const images = post.carousel_images?.length > 0 ? post.carousel_images : post.image_url ? [post.image_url] : []
+          setSelectedImage(images[0] || null)
+          setCarouselImages(images)
+          setCaption(post.caption || "")
+          // Restore overlay blocks if saved (stored as { "0": [...], "1": [...] })
+          if (post.overlay_blocks && typeof post.overlay_blocks === "object") {
+            const blocksMap: Record<number, CanvasBlock[]> = {}
+            for (const [key, val] of Object.entries(post.overlay_blocks)) {
+              blocksMap[Number(key)] = val as CanvasBlock[]
+            }
+            setOverlayBlocksMap(blocksMap)
+            // If we have overlay blocks, use original URLs as the editor background
+            if (post.original_image_url) {
+              // original_image_url is stored as a comma-less JSON array or single string
+              try {
+                const parsed = JSON.parse(post.original_image_url)
+                setOriginalImageUrls(Array.isArray(parsed) ? parsed : [parsed])
+              } catch {
+                setOriginalImageUrls([post.original_image_url])
+              }
+            }
+          }
+        } else {
+          setPostError("Post not found. It may have been deleted.")
+        }
+      } catch (error) {
+        console.error("Failed to load post for editing:", error)
+        setPostError("Failed to load post for editing.")
+      } finally {
+        setLoadingEdit(false)
+      }
+    }
+    loadPost()
+  }, [editPostId])
 
   async function uploadReferenceFile(file: File) {
     setUploadingReference(true)
@@ -173,6 +234,18 @@ export default function NewPostPage() {
   function removeCarouselImage(index: number) {
     const updated = carouselImages.filter((_, i) => i !== index)
     setCarouselImages(updated)
+    // Re-index overlay blocks and original URLs to match shifted carousel
+    setOverlayBlocksMap((prev) => {
+      const next: Record<number, CanvasBlock[]> = {}
+      for (const [key, val] of Object.entries(prev)) {
+        const k = Number(key)
+        if (k < index) next[k] = val
+        else if (k > index) next[k - 1] = val
+        // k === index is dropped (removed image)
+      }
+      return next
+    })
+    setOriginalImageUrls((prev) => prev.filter((_, i) => i !== index))
     if (updated.length === 0) {
       setSelectedImage(null)
       setCarouselIndex(0)
@@ -219,26 +292,40 @@ export default function NewPostPage() {
     setPosting(true)
     setPostError(null)
     try {
+      const isEdit = !!editPostId
       const res = await fetch("/api/instagram/posts", {
-        method: "POST",
+        method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_url: carouselImages[0] || selectedImage,
-          caption,
-          likes_count: Math.floor(Math.random() * 300) + 100,
-          comments_count: Math.floor(Math.random() * 20) + 5,
-          carousel_images: carouselImages.length > 1 ? carouselImages : [],
-        }),
+        body: JSON.stringify(
+          isEdit
+            ? {
+                id: editPostId,
+                image_url: carouselImages[0] || selectedImage,
+                caption,
+                carousel_images: carouselImages.length > 1 ? carouselImages : [],
+                overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
+                original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
+              }
+            : {
+                image_url: carouselImages[0] || selectedImage,
+                caption,
+                likes_count: Math.floor(Math.random() * 300) + 100,
+                comments_count: Math.floor(Math.random() * 20) + 5,
+                carousel_images: carouselImages.length > 1 ? carouselImages : [],
+                overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
+                original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
+              }
+        ),
       })
 
       if (res.ok) {
         router.push("/")
       } else {
-        setPostError("Failed to create post. Please try again.")
+        setPostError(`Failed to ${isEdit ? "update" : "create"} post. Please try again.`)
       }
     } catch (error) {
-      console.error("Failed to create post:", error)
-      setPostError("Failed to create post. Please try again.")
+      console.error("Failed to save post:", error)
+      setPostError(`Failed to ${editPostId ? "update" : "create"} post. Please try again.`)
     } finally {
       setPosting(false)
     }
@@ -252,22 +339,44 @@ export default function NewPostPage() {
           <ChevronLeft className="w-5 h-5" />
           <span>Back</span>
         </Link>
-        <span className="font-semibold">New Post</span>
+        <span className="font-semibold">{editPostId ? "Edit Post" : "New Post"}</span>
         <div className="w-16" />
       </header>
 
       <div className="max-w-2xl mx-auto p-4">
+        {loadingEdit ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-6 h-6 animate-spin text-neutral-400" />
+          </div>
+        ) : (
+        <>
         {/* Selected image preview + caption */}
         {selectedImage && !addingMore && (
           <div className="mb-6">
             {editingTextIndex !== null ? (
               <div className="max-w-md mx-auto">
                 <TextOverlayEditor
-                  imageUrl={carouselImages[editingTextIndex] || selectedImage}
-                  onExport={async (dataUrl) => {
+                  imageUrl={originalImageUrls[editingTextIndex] || carouselImages[editingTextIndex] || selectedImage}
+                  initialBlocks={overlayBlocksMap[editingTextIndex]}
+                  onExport={async (dataUrl, blocks) => {
                     // Capture index before any async work (avoid stale closure)
                     const idx = editingTextIndex!
+                    setExportingOverlay(true)
                     try {
+                      // Save the original (clean) image URL before first overlay
+                      if (!originalImageUrls[idx]) {
+                        setOriginalImageUrls((prev) => {
+                          const next = [...prev]
+                          next[idx] = carouselImages[idx] || selectedImage || ""
+                          return next
+                        })
+                      }
+                      // Save the overlay blocks for this image index
+                      // Filter out image blocks — their data URLs are too large for JSON storage
+                      // and they're already baked into the exported PNG
+                      const persistableBlocks = blocks.filter((b) => b.type !== "image")
+                      setOverlayBlocksMap((prev) => ({ ...prev, [idx]: persistableBlocks }))
+
                       const res = await fetch(dataUrl)
                       const blob = await res.blob()
                       const file = new File([blob], "text-overlay.png", { type: "image/png" })
@@ -287,6 +396,8 @@ export default function NewPostPage() {
                     } catch (error) {
                       console.error("Failed to export text overlay:", error)
                       alert("Failed to save image with text. Please try again.")
+                    } finally {
+                      setExportingOverlay(false)
                     }
                   }}
                   onCancel={() => setEditingTextIndex(null)}
@@ -377,7 +488,7 @@ export default function NewPostPage() {
                 className="w-full"
               >
                 <Type className="w-4 h-4 mr-1.5" />
-                Add Text to Image
+                {overlayBlocksMap[carouselIndex]?.length ? "Edit Text & Overlays" : "Add Text to Image"}
               </Button>
             </div>
             </>
@@ -471,16 +582,21 @@ export default function NewPostPage() {
 
               <Button
                 onClick={createPost}
-                disabled={posting}
+                disabled={posting || exportingOverlay}
                 className="w-full mt-3 bg-[#0095f6] hover:bg-[#1877f2] text-white font-semibold"
               >
-                {posting ? (
+                {exportingOverlay ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Sharing...
+                    Applying text...
+                  </>
+                ) : posting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {editPostId ? "Saving..." : "Sharing..."}
                   </>
                 ) : (
-                  "Share"
+                  editPostId ? "Save Changes" : "Share"
                 )}
               </Button>
               {postError && <p className="text-sm text-red-500 mt-2 text-center">{postError}</p>}
@@ -490,6 +606,8 @@ export default function NewPostPage() {
                   setSelectedImage(null)
                   setCarouselImages([])
                   setCarouselIndex(0)
+                  setOverlayBlocksMap({})
+                  setOriginalImageUrls([])
                 }}
                 className="w-full mt-2 text-sm text-neutral-500 hover:text-neutral-700"
               >
@@ -731,6 +849,8 @@ export default function NewPostPage() {
               </div>
             )}
           </>
+        )}
+        </>
         )}
       </div>
     </div>
