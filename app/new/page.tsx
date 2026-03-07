@@ -48,7 +48,7 @@ function NewPostPage() {
   const [generatingCaptions, setGeneratingCaptions] = useState(false)
   const [showCaptionAssist, setShowCaptionAssist] = useState(false)
   const [captionContext, setCaptionContext] = useState("")
-  const [imageModel, setImageModel] = useState("fal-ai/flux-pro/v1.1-ultra")
+  const [imageModel, setImageModel] = useState("fal-ai/nano-banana-2")
   const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null)
   const [exportingOverlay, setExportingOverlay] = useState(false)
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
@@ -116,7 +116,7 @@ function NewPostPage() {
       if (!res.ok) throw new Error("Upload failed")
       const data = await res.json()
       setReferenceImage(data.imageUrl)
-      setImageModel("fal-ai/flux-pro/v1.1-ultra")
+      setImageModel("fal-ai/flux/krea/image-to-image")
       setGeneratedImage(null)
     } catch {
       alert("Failed to upload reference image")
@@ -721,7 +721,7 @@ function NewPostPage() {
                         <span className="text-sm font-medium">Reference image</span>
                         {referenceImage && (
                           <button
-                            onClick={() => { setReferenceImage(null); setImageModel("fal-ai/flux-pro/v1.1-ultra"); setGeneratedImage(null) }}
+                            onClick={() => { setReferenceImage(null); setImageModel("fal-ai/nano-banana-2"); setGeneratedImage(null) }}
                             className="text-xs text-red-500 hover:text-red-600"
                           >
                             Remove
@@ -772,7 +772,7 @@ function NewPostPage() {
                           ? "AI will use this as inspiration — adjust the slider below to control how closely"
                           : "Optional — upload a photo and the AI will transform it instead of generating from scratch"}
                       </p>
-                      {referenceImage && imageModel !== "fal-ai/flux-pro/kontext" && (
+                      {referenceImage && (
                         <div className="mt-2 flex items-center gap-2">
                           <span className="text-[11px] text-neutral-500 w-16 shrink-0">Inspiration</span>
                           <input
@@ -799,18 +799,15 @@ function NewPostPage() {
                     >
                       {referenceImage ? (
                         <>
-                          <option value="fal-ai/flux-pro/v1.1-ultra">FLUX Pro Ultra (Raw)</option>
-                          <option value="fal-ai/flux-pro/kontext">FLUX Kontext Pro</option>
                           <option value="fal-ai/flux/krea/image-to-image">FLUX Krea</option>
                         </>
                       ) : (
                         <>
-                          <option value="fal-ai/flux-pro/v1.1-ultra">FLUX Pro Ultra (Raw)</option>
+                          <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
                           <option value="fal-ai/bytedance/seedream/v4.5/text-to-image">Seedream V4.5</option>
                           <option value="fal-ai/recraft/v3/text-to-image">Recraft V3</option>
                           <option value="fal-ai/flux/krea">FLUX Krea</option>
                           <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
-                          <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
                         </>
                       )}
                     </select>
