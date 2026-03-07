@@ -108,7 +108,7 @@ export type CanvasBlock = TextBlock | ShapeBlock | EllipseBlock | LineBlock | Im
 interface TextOverlayEditorProps {
   imageUrl: string
   onExport: (dataUrl: string, blocks: CanvasBlock[]) => void
-  onCancel: () => void
+  onCancel?: () => void
   initialBlocks?: CanvasBlock[]
 }
 
@@ -1345,19 +1345,13 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks 
         </div>
       )}
 
-      {/* Export / Cancel */}
-      <div className="flex gap-2">
-        <Button variant="outline" onClick={onCancel} className="flex-1">
-          Cancel
-        </Button>
-        <Button
-          onClick={handleExport}
-          className="flex-1 bg-[#0095f6] hover:bg-[#1877f2] text-white"
-        >
-          <Download className="w-4 h-4 mr-1.5" />
-          Apply
-        </Button>
-      </div>
+      {/* Done */}
+      <Button
+        onClick={handleExport}
+        className="w-full bg-[#0095f6] hover:bg-[#1877f2] text-white"
+      >
+        Done
+      </Button>
     </div>
   )
 }

@@ -809,8 +809,6 @@ function NewPostPage() {
                       ) : (
                         <>
                           <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
-                          <option value="fal-ai/bytedance/seedream/v4.5/text-to-image">Seedream V4.5</option>
-                          <option value="fal-ai/recraft/v3/text-to-image">Recraft V3</option>
                           <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
                         </>
                       )}

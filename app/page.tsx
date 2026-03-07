@@ -988,7 +988,7 @@ export default function InstagramPage() {
                       alt={selectedPost.caption || "Post"}
                       fill
                       sizes="600px"
-                      className="object-contain"
+                      className="object-cover"
                       unoptimized
                     />
                     {modalImages.length > 1 && (

@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Text-to-image mode
-    const allowedModels = ["fal-ai/nano-banana-2", "fal-ai/gpt-image-1.5", "fal-ai/bytedance/seedream/v4.5/text-to-image", "fal-ai/recraft/v3/text-to-image"]
+    const allowedModels = ["fal-ai/nano-banana-2", "fal-ai/gpt-image-1.5"]
     const selectedModel = allowedModels.includes(model) ? model : allowedModels[0]
 
     // Nano Banana 2 uses resolution, not image_size
@@ -147,33 +147,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, imageUrl: generatedImageUrl })
     }
 
-    // Recraft uses style param
-    if (selectedModel === "fal-ai/recraft/v3/text-to-image") {
-      const result = await withRetry(async () => {
-        return await fal.subscribe(selectedModel, {
-          input: {
-            prompt: finalPrompt,
-            image_size: "square_hd",
-            style: "realistic_image",
-          },
-        })
-      })
-      const generatedImageUrl = result.data?.images?.[0]?.url
-      if (!generatedImageUrl) throw new Error("No image generated from fal")
-      return NextResponse.json({ success: true, imageUrl: generatedImageUrl })
-    }
-
-    // Standard models use image_size
-    const sizeMap: Record<string, string> = {
-      "fal-ai/gpt-image-1.5": "1024x1024",
-      "fal-ai/bytedance/seedream/v4.5/text-to-image": "square",
-    }
-
+    // GPT Image uses 1024x1024
     const result = await withRetry(async () => {
       return await fal.subscribe(selectedModel, {
         input: {
           prompt: finalPrompt,
-          image_size: sizeMap[selectedModel] || "square",
+          image_size: selectedModel === "fal-ai/gpt-image-1.5" ? "1024x1024" : "square",
         },
       })
     })
