@@ -48,12 +48,13 @@ function NewPostPage() {
   const [generatingCaptions, setGeneratingCaptions] = useState(false)
   const [showCaptionAssist, setShowCaptionAssist] = useState(false)
   const [captionContext, setCaptionContext] = useState("")
-  const [imageModel, setImageModel] = useState("fal-ai/nano-banana-2")
+  const [imageModel, setImageModel] = useState("fal-ai/flux-pro/v1.1-ultra")
   const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null)
   const [exportingOverlay, setExportingOverlay] = useState(false)
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
   const [uploadingReference, setUploadingReference] = useState(false)
   const [dragOverRef, setDragOverRef] = useState(false)
+  const [referenceStrength, setReferenceStrength] = useState(0.3)
   // Per-image overlay blocks (keyed by carousel index) and original (pre-overlay) image URLs
   const [overlayBlocksMap, setOverlayBlocksMap] = useState<Record<number, CanvasBlock[]>>({})
   const [originalImageUrls, setOriginalImageUrls] = useState<string[]>([])
@@ -115,6 +116,7 @@ function NewPostPage() {
       if (!res.ok) throw new Error("Upload failed")
       const data = await res.json()
       setReferenceImage(data.imageUrl)
+      setImageModel("fal-ai/flux-pro/v1.1-ultra")
       setGeneratedImage(null)
     } catch {
       alert("Failed to upload reference image")
@@ -154,7 +156,7 @@ function NewPostPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           referenceImage
-            ? { prompt: customPrompt, referenceImageUrl: referenceImage }
+            ? { prompt: customPrompt, referenceImageUrl: referenceImage, model: imageModel, referenceStrength }
             : { prompt: customPrompt, model: imageModel },
         ),
       })
@@ -719,7 +721,7 @@ function NewPostPage() {
                         <span className="text-sm font-medium">Reference image</span>
                         {referenceImage && (
                           <button
-                            onClick={() => { setReferenceImage(null); setGeneratedImage(null) }}
+                            onClick={() => { setReferenceImage(null); setImageModel("fal-ai/flux-pro/v1.1-ultra"); setGeneratedImage(null) }}
                             className="text-xs text-red-500 hover:text-red-600"
                           >
                             Remove
@@ -767,23 +769,51 @@ function NewPostPage() {
                       )}
                       <p className="text-[11px] text-neutral-400 mt-1.5">
                         {referenceImage
-                          ? "AI will edit this image based on your prompt (FLUX Kontext)"
+                          ? "AI will use this as inspiration — adjust the slider below to control how closely"
                           : "Optional — upload a photo and the AI will transform it instead of generating from scratch"}
                       </p>
+                      {referenceImage && imageModel !== "fal-ai/flux-pro/kontext" && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-[11px] text-neutral-500 w-16 shrink-0">Inspiration</span>
+                          <input
+                            type="range"
+                            min={0.05}
+                            max={1}
+                            step={0.05}
+                            value={referenceStrength}
+                            onChange={(e) => setReferenceStrength(Number(e.target.value))}
+                            className="flex-1"
+                          />
+                          <span className="text-[11px] text-neutral-500 w-12 text-right">
+                            {referenceStrength <= 0.25 ? "Loose" : referenceStrength <= 0.5 ? "Medium" : referenceStrength <= 0.75 ? "Close" : "Exact"}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Model picker — only for text-to-image (no reference) */}
-                    {!referenceImage && (
-                      <select
-                        value={imageModel}
-                        onChange={(e) => setImageModel(e.target.value)}
-                        className="w-full mb-3 px-3 py-2 text-sm border border-neutral-200 rounded-md bg-white"
-                      >
-                        <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
-                        <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
-                        <option value="fal-ai/flux-2-pro">Flux 2 Pro</option>
-                      </select>
-                    )}
+                    {/* Model picker */}
+                    <select
+                      value={imageModel}
+                      onChange={(e) => setImageModel(e.target.value)}
+                      className="w-full mb-3 px-3 py-2 text-sm border border-neutral-200 rounded-md bg-white"
+                    >
+                      {referenceImage ? (
+                        <>
+                          <option value="fal-ai/flux-pro/v1.1-ultra">FLUX Pro Ultra (Raw)</option>
+                          <option value="fal-ai/flux-pro/kontext">FLUX Kontext Pro</option>
+                          <option value="fal-ai/flux/krea/image-to-image">FLUX Krea</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="fal-ai/flux-pro/v1.1-ultra">FLUX Pro Ultra (Raw)</option>
+                          <option value="fal-ai/bytedance/seedream/v4.5/text-to-image">Seedream V4.5</option>
+                          <option value="fal-ai/recraft/v3/text-to-image">Recraft V3</option>
+                          <option value="fal-ai/flux/krea">FLUX Krea</option>
+                          <option value="fal-ai/gpt-image-1.5">GPT Image 1.5</option>
+                          <option value="fal-ai/nano-banana-2">Nano Banana 2</option>
+                        </>
+                      )}
+                    </select>
 
                     <Textarea
                       value={customPrompt}
