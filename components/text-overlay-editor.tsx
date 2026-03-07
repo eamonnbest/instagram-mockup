@@ -1,13 +1,13 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Stage, Layer, Image as KonvaImage, Text, Rect, Transformer, Group } from "react-konva"
+import { Stage, Layer, Image as KonvaImage, Text, Rect, Ellipse, Arrow, Line, Transformer, Group } from "react-konva"
 import type Konva from "konva"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Plus, Trash2, Download, Type, Bold, Italic, AlignLeft, AlignCenter, AlignRight,
-  Square, ChevronUp, ChevronDown, Copy,
+  Square, Circle, ArrowRight, ImagePlus, ChevronUp, ChevronDown, Copy,
 } from "lucide-react"
 
 interface TextBlock {
@@ -23,6 +23,7 @@ interface TextBlock {
   align: string
   width: number
   opacity: number
+  rotation: number
   // Text background
   bgEnabled: boolean
   bgColor: string
@@ -52,13 +53,57 @@ interface ShapeBlock {
   height: number
   fill: string
   opacity: number
+  rotation: number
   cornerRadius: number
   strokeEnabled: boolean
   strokeColor: string
   strokeWidth: number
 }
 
-type CanvasBlock = TextBlock | ShapeBlock
+interface EllipseBlock {
+  id: string
+  type: "ellipse"
+  x: number
+  y: number
+  radiusX: number
+  radiusY: number
+  fill: string
+  opacity: number
+  rotation: number
+  strokeEnabled: boolean
+  strokeColor: string
+  strokeWidth: number
+}
+
+interface LineBlock {
+  id: string
+  type: "line"
+  x: number
+  y: number
+  points: number[] // [x1, y1, x2, y2] relative to x,y
+  stroke: string
+  strokeWidth: number
+  opacity: number
+  rotation: number
+  arrowEnd: boolean
+  arrowStart: boolean
+  dash: boolean
+}
+
+interface ImageBlock {
+  id: string
+  type: "image"
+  x: number
+  y: number
+  width: number
+  height: number
+  opacity: number
+  rotation: number
+  src: string // data URL or external URL
+  cornerRadius: number
+}
+
+type CanvasBlock = TextBlock | ShapeBlock | EllipseBlock | LineBlock | ImageBlock
 
 interface TextOverlayEditorProps {
   imageUrl: string
@@ -94,6 +139,7 @@ function TextBlockGroup({
     <Group
       id={tb.id}
       x={tb.x} y={tb.y}
+      rotation={tb.rotation}
       draggable
       onClick={onSelect}
       onTap={onSelect}
@@ -103,6 +149,7 @@ function TextBlockGroup({
         const sx = node.scaleX()
         onUpdate({
           x: node.x(), y: node.y(),
+          rotation: node.rotation(),
           width: Math.max(50, tb.width * sx),
           fontSize: Math.max(16, tb.fontSize * node.scaleY()),
         })
@@ -139,9 +186,58 @@ function TextBlockGroup({
         shadowOffsetY={tb.shadowOffsetY}
         stroke={tb.strokeEnabled ? tb.strokeColor : undefined}
         strokeWidth={tb.strokeEnabled ? tb.strokeWidth : 0}
-        listening={false}
       />
     </Group>
+  )
+}
+
+// Sub-component for image overlay blocks
+function ImageBlockNode({
+  block,
+  onSelect,
+  onUpdate,
+}: {
+  block: ImageBlock
+  onSelect: () => void
+  onUpdate: (updates: Record<string, unknown>) => void
+}) {
+  const [img, setImg] = useState<HTMLImageElement | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const image = new window.Image()
+    image.crossOrigin = "anonymous"
+    image.onload = () => { if (!cancelled) setImg(image) }
+    image.src = block.src
+    return () => { cancelled = true }
+  }, [block.src])
+
+  if (!img) return null
+
+  return (
+    <KonvaImage
+      id={block.id}
+      image={img}
+      x={block.x} y={block.y}
+      width={block.width} height={block.height}
+      rotation={block.rotation}
+      opacity={block.opacity}
+      cornerRadius={block.cornerRadius}
+      draggable
+      onClick={onSelect}
+      onTap={onSelect}
+      onDragEnd={(e) => onUpdate({ x: e.target.x(), y: e.target.y() })}
+      onTransformEnd={(e) => {
+        const node = e.target
+        onUpdate({
+          x: node.x(), y: node.y(),
+          rotation: node.rotation(),
+          width: Math.max(20, node.width() * node.scaleX()),
+          height: Math.max(20, node.height() * node.scaleY()),
+        })
+        node.scaleX(1); node.scaleY(1)
+      }}
+    />
   )
 }
 
@@ -172,12 +268,24 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
   const [imgError, setImgError] = useState(false)
   const idCounter = useRef(0)
   const nextId = (prefix: string) => `${prefix}-${++idCounter.current}`
+  const overlayFileRef = useRef<HTMLInputElement>(null)
+  const bgImageRef = useRef<Konva.Image>(null)
+  const [filters, setFilters] = useState({
+    brightness: 0,
+    contrast: 0,
+    saturation: 0,
+    blur: 0,
+    grayscale: false,
+    sepia: false,
+  })
 
   // Load image with cover-crop
   useEffect(() => {
+    let cancelled = false
     const img = new window.Image()
     img.crossOrigin = "anonymous"
     img.onload = () => {
+      if (cancelled) return
       const imgRatio = img.width / img.height
       let w: number, h: number, x: number, y: number
       if (imgRatio > 1) {
@@ -190,8 +298,9 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
       setImgDims({ x, y, w, h })
       setImage(img)
     }
-    img.onerror = () => setImgError(true)
+    img.onerror = () => { if (!cancelled) setImgError(true) }
     img.src = imageUrl
+    return () => { cancelled = true }
   }, [imageUrl])
 
   // Update transformer
@@ -209,6 +318,42 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
     transformerRef.current.getLayer()?.batchDraw()
   }, [selectedId, blocks])
 
+  // Cache Konva module reference to avoid dynamic import on every filter change (#10)
+  const konvaRef = useRef<typeof Konva | null>(null)
+  useEffect(() => {
+    import("konva").then((m) => { konvaRef.current = m.default })
+  }, [])
+
+  // Apply filters to background image
+  useEffect(() => {
+    const node = bgImageRef.current
+    const K = konvaRef.current
+    if (!node || !K) return
+
+    const activeFilters: Array<typeof K.Filters.Brighten> = []
+    if (filters.brightness !== 0) activeFilters.push(K.Filters.Brighten)
+    if (filters.contrast !== 0) activeFilters.push(K.Filters.Contrast)
+    if (filters.blur > 0) activeFilters.push(K.Filters.Blur)
+    if (filters.grayscale) activeFilters.push(K.Filters.Grayscale)
+    if (filters.saturation !== 0) activeFilters.push(K.Filters.HSL)
+    if (filters.sepia) activeFilters.push(K.Filters.Sepia)
+
+    if (activeFilters.length > 0) {
+      node.filters(activeFilters)
+      node.brightness(filters.brightness)
+      node.contrast(filters.contrast)
+      node.blurRadius(filters.blur)
+      if (filters.saturation !== 0) {
+        node.saturation(filters.saturation)
+      }
+      node.cache()
+    } else {
+      node.filters([])
+      node.clearCache()
+    }
+    node.getLayer()?.batchDraw()
+  }, [filters, image])
+
   function addTextBlock() {
     const id = nextId("text")
     const block: TextBlock = {
@@ -222,7 +367,7 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
       bgEnabled: false, bgColor: "#000000", bgOpacity: 0.7, bgPadding: 24, bgCornerRadius: 16,
       shadowEnabled: true, shadowColor: "#000000", shadowBlur: 8, shadowOffsetX: 2, shadowOffsetY: 2,
       strokeEnabled: false, strokeColor: "#000000", strokeWidth: 2,
-      lineHeight: 1.2, letterSpacing: 0,
+      rotation: 0, lineHeight: 1.2, letterSpacing: 0,
     }
     setBlocks((prev) => [...prev, block])
     setSelectedId(id)
@@ -234,11 +379,69 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
       id, type: "rect",
       x: CANVAS_SIZE / 4, y: CANVAS_SIZE / 4,
       width: CANVAS_SIZE / 2, height: CANVAS_SIZE / 2,
-      fill: "#000000", opacity: 0.5, cornerRadius: 0,
+      fill: "#000000", opacity: 0.5, rotation: 0, cornerRadius: 0,
       strokeEnabled: false, strokeColor: "#ffffff", strokeWidth: 4,
     }
     setBlocks((prev) => [...prev, block])
     setSelectedId(id)
+  }
+
+  function addEllipseBlock() {
+    const id = nextId("ellipse")
+    const block: EllipseBlock = {
+      id, type: "ellipse",
+      x: CANVAS_SIZE / 2, y: CANVAS_SIZE / 2,
+      radiusX: 200, radiusY: 200,
+      fill: "#000000", opacity: 0.5, rotation: 0,
+      strokeEnabled: false, strokeColor: "#ffffff", strokeWidth: 4,
+    }
+    setBlocks((prev) => [...prev, block])
+    setSelectedId(id)
+  }
+
+  function addLineBlock() {
+    const id = nextId("line")
+    const block: LineBlock = {
+      id, type: "line",
+      x: CANVAS_SIZE / 4, y: CANVAS_SIZE / 2,
+      points: [0, 0, CANVAS_SIZE / 2, 0],
+      stroke: "#ffffff", strokeWidth: 6, opacity: 1, rotation: 0,
+      arrowEnd: true, arrowStart: false, dash: false,
+    }
+    setBlocks((prev) => [...prev, block])
+    setSelectedId(id)
+  }
+
+  function handleOverlayFile(file: File) {
+    if (!file.type.startsWith("image/")) return
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Image must be under 10MB")
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      const img = new window.Image()
+      img.onload = () => {
+        const id = nextId("image")
+        // Scale to fit within canvas while maintaining aspect ratio
+        const maxDim = CANVAS_SIZE / 2
+        const ratio = img.width / img.height
+        let w: number, h: number
+        if (ratio > 1) { w = maxDim; h = maxDim / ratio }
+        else { h = maxDim; w = maxDim * ratio }
+        const block: ImageBlock = {
+          id, type: "image",
+          x: (CANVAS_SIZE - w) / 2, y: (CANVAS_SIZE - h) / 2,
+          width: w, height: h,
+          opacity: 1, rotation: 0, src: dataUrl, cornerRadius: 0,
+        }
+        setBlocks((prev) => [...prev, block])
+        setSelectedId(id)
+      }
+      img.src = dataUrl
+    }
+    reader.readAsDataURL(file)
   }
 
   function duplicateBlock(id: string) {
@@ -246,6 +449,10 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
     if (!block) return
     const newId = nextId(block.type)
     const copy = { ...block, id: newId, x: block.x + 30, y: block.y + 30 }
+    // Deep copy arrays to avoid shared references
+    if (copy.type === "line") {
+      (copy as LineBlock).points = [...(copy as LineBlock).points]
+    }
     setBlocks((prev) => [...prev, copy])
     setSelectedId(newId)
   }
@@ -274,13 +481,18 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
 
   const handleExport = useCallback(() => {
     if (!stageRef.current || !transformerRef.current) return
+    // Clear transformer handles before export
     transformerRef.current.nodes([])
-    transformerRef.current.getLayer()?.draw()
-    setSelectedId(null)
+    // Ensure filters are fully rendered (re-cache if filters active)
+    if (bgImageRef.current && bgImageRef.current.filters()?.length) {
+      bgImageRef.current.cache()
+    }
+    stageRef.current.draw()
     const dataUrl = stageRef.current.toDataURL({
       pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
       mimeType: "image/png",
     })
+    setSelectedId(null)
     onExport(dataUrl)
   }, [onExport])
 
@@ -306,12 +518,12 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
           scaleX={scale}
           scaleY={scale}
           onMouseDown={(e) => {
-            if (e.target === e.target.getStage() || e.target.getClassName() === "Image") {
+            if (e.target === e.target.getStage()) {
               setSelectedId(null)
             }
           }}
           onTap={(e) => {
-            if (e.target === e.target.getStage() || e.target.getClassName() === "Image") {
+            if (e.target === e.target.getStage()) {
               setSelectedId(null)
             }
           }}
@@ -319,6 +531,7 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
           <Layer>
             {image && (
               <KonvaImage
+                ref={bgImageRef}
                 image={image}
                 x={imgDims.x} y={imgDims.y}
                 width={imgDims.w} height={imgDims.h}
@@ -333,6 +546,7 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
                     id={block.id}
                     x={block.x} y={block.y}
                     width={block.width} height={block.height}
+                    rotation={block.rotation}
                     fill={block.fill}
                     opacity={block.opacity}
                     cornerRadius={block.cornerRadius}
@@ -346,11 +560,85 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
                       const node = e.target
                       updateBlock(block.id, {
                         x: node.x(), y: node.y(),
+                        rotation: node.rotation(),
                         width: Math.max(20, node.width() * node.scaleX()),
                         height: Math.max(20, node.height() * node.scaleY()),
                       })
                       node.scaleX(1); node.scaleY(1)
                     }}
+                  />
+                )
+              }
+              if (block.type === "ellipse") {
+                return (
+                  <Ellipse
+                    key={block.id}
+                    id={block.id}
+                    x={block.x} y={block.y}
+                    radiusX={block.radiusX} radiusY={block.radiusY}
+                    rotation={block.rotation}
+                    fill={block.fill}
+                    opacity={block.opacity}
+                    stroke={block.strokeEnabled ? block.strokeColor : undefined}
+                    strokeWidth={block.strokeEnabled ? block.strokeWidth : 0}
+                    draggable
+                    onClick={() => setSelectedId(block.id)}
+                    onTap={() => setSelectedId(block.id)}
+                    onDragEnd={(e) => updateBlock(block.id, { x: e.target.x(), y: e.target.y() })}
+                    onTransformEnd={(e) => {
+                      const node = e.target
+                      updateBlock(block.id, {
+                        x: node.x(), y: node.y(),
+                        rotation: node.rotation(),
+                        radiusX: Math.max(10, block.radiusX * node.scaleX()),
+                        radiusY: Math.max(10, block.radiusY * node.scaleY()),
+                      })
+                      node.scaleX(1); node.scaleY(1)
+                    }}
+                  />
+                )
+              }
+              if (block.type === "line") {
+                const LineComponent = (block.arrowEnd || block.arrowStart) ? Arrow : Line
+                return (
+                  <LineComponent
+                    key={block.id}
+                    id={block.id}
+                    x={block.x} y={block.y}
+                    points={block.points}
+                    rotation={block.rotation}
+                    stroke={block.stroke}
+                    strokeWidth={block.strokeWidth}
+                    opacity={block.opacity}
+                    pointerLength={block.arrowEnd || block.arrowStart ? 20 : 0}
+                    pointerWidth={block.arrowEnd || block.arrowStart ? 20 : 0}
+                    pointerAtBeginning={block.arrowStart}
+                    dash={block.dash ? [20, 10] : undefined}
+                    draggable
+                    onClick={() => setSelectedId(block.id)}
+                    onTap={() => setSelectedId(block.id)}
+                    onDragEnd={(e) => updateBlock(block.id, { x: e.target.x(), y: e.target.y() })}
+                    onTransformEnd={(e) => {
+                      const node = e.target
+                      const sx = node.scaleX()
+                      const sy = node.scaleY()
+                      updateBlock(block.id, {
+                        x: node.x(), y: node.y(),
+                        rotation: node.rotation(),
+                        points: block.points.map((p, i) => p * (i % 2 === 0 ? sx : sy)),
+                      })
+                      node.scaleX(1); node.scaleY(1)
+                    }}
+                  />
+                )
+              }
+              if (block.type === "image") {
+                return (
+                  <ImageBlockNode
+                    key={block.id}
+                    block={block}
+                    onSelect={() => setSelectedId(block.id)}
+                    onUpdate={(updates) => updateBlock(block.id, updates)}
                   />
                 )
               }
@@ -378,16 +666,102 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
       </div>
 
       {/* Add buttons */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <Button onClick={addTextBlock} variant="outline" size="sm" className="flex-1">
           <Type className="w-4 h-4 mr-1.5" />
-          Add Text
+          Text
         </Button>
         <Button onClick={addShapeBlock} variant="outline" size="sm" className="flex-1">
           <Square className="w-4 h-4 mr-1.5" />
-          Add Shape
+          Rect
         </Button>
+        <Button onClick={addEllipseBlock} variant="outline" size="sm" className="flex-1">
+          <Circle className="w-4 h-4 mr-1.5" />
+          Ellipse
+        </Button>
+        <Button onClick={addLineBlock} variant="outline" size="sm" className="flex-1">
+          <ArrowRight className="w-4 h-4 mr-1.5" />
+          Line
+        </Button>
+        <Button onClick={() => overlayFileRef.current?.click()} variant="outline" size="sm" className="flex-1">
+          <ImagePlus className="w-4 h-4 mr-1.5" />
+          Image
+        </Button>
+        <input
+          ref={overlayFileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) handleOverlayFile(file)
+            e.target.value = ""
+          }}
+        />
       </div>
+
+      {/* Background filters — shown when nothing selected */}
+      {!selectedBlock && (
+        <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 space-y-2">
+          <span className="text-xs font-medium text-neutral-700">Background Filters</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500 w-16">Brightness</span>
+            <input
+              type="range" min={-1} max={1} step={0.05}
+              value={filters.brightness}
+              onChange={(e) => setFilters((f) => ({ ...f, brightness: Number(e.target.value) }))}
+              className="flex-1"
+            />
+            <span className="text-xs text-neutral-500 w-8 text-right">{Math.round(filters.brightness * 100)}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500 w-16">Contrast</span>
+            <input
+              type="range" min={-100} max={100} step={1}
+              value={filters.contrast}
+              onChange={(e) => setFilters((f) => ({ ...f, contrast: Number(e.target.value) }))}
+              className="flex-1"
+            />
+            <span className="text-xs text-neutral-500 w-8 text-right">{filters.contrast}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500 w-16">Saturation</span>
+            <input
+              type="range" min={-2} max={2} step={0.1}
+              value={filters.saturation}
+              onChange={(e) => setFilters((f) => ({ ...f, saturation: Number(e.target.value) }))}
+              className="flex-1"
+            />
+            <span className="text-xs text-neutral-500 w-8 text-right">{filters.saturation.toFixed(1)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500 w-16">Blur</span>
+            <input
+              type="range" min={0} max={20} step={0.5}
+              value={filters.blur}
+              onChange={(e) => setFilters((f) => ({ ...f, blur: Number(e.target.value) }))}
+              className="flex-1"
+            />
+            <span className="text-xs text-neutral-500 w-8 text-right">{filters.blur}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-neutral-500 cursor-pointer">
+              <input
+                type="checkbox" checked={filters.grayscale}
+                onChange={(e) => setFilters((f) => ({ ...f, grayscale: e.target.checked }))}
+              />
+              Grayscale
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-neutral-500 cursor-pointer">
+              <input
+                type="checkbox" checked={filters.sepia}
+                onChange={(e) => setFilters((f) => ({ ...f, sepia: e.target.checked }))}
+              />
+              Sepia
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* Controls panel */}
       {selectedBlock && (
@@ -422,27 +796,29 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
           </div>
 
           {/* Color */}
-          <div>
-            <span className="text-xs text-neutral-500 mb-1 block">Fill color</span>
-            <div className="flex items-center gap-1 flex-wrap">
-              {PRESET_COLORS.map((color) => (
-                <button
-                  key={color}
-                  onClick={() => updateBlock(selectedBlock.id, { fill: color })}
-                  className={`w-5 h-5 rounded-full border-2 transition-transform ${
-                    selectedBlock.fill === color ? "border-blue-500 scale-110" : "border-neutral-300"
-                  }`}
-                  style={{ backgroundColor: color }}
+          {selectedBlock.type !== "line" && selectedBlock.type !== "image" && (
+            <div>
+              <span className="text-xs text-neutral-500 mb-1 block">Fill color</span>
+              <div className="flex items-center gap-1 flex-wrap">
+                {PRESET_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => updateBlock(selectedBlock.id, { fill: color })}
+                    className={`w-5 h-5 rounded-full border-2 transition-transform ${
+                      (selectedBlock as TextBlock | ShapeBlock | EllipseBlock).fill === color ? "border-blue-500 scale-110" : "border-neutral-300"
+                    }`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={(selectedBlock as TextBlock | ShapeBlock | EllipseBlock).fill}
+                  onChange={(e) => updateBlock(selectedBlock.id, { fill: e.target.value })}
+                  className="w-5 h-5 rounded cursor-pointer"
                 />
-              ))}
-              <input
-                type="color"
-                value={selectedBlock.fill}
-                onChange={(e) => updateBlock(selectedBlock.id, { fill: e.target.value })}
-                className="w-5 h-5 rounded cursor-pointer"
-              />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Shape-specific controls */}
           {selectedBlock.type === "rect" && (
@@ -483,6 +859,116 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel }: TextOverlayE
                 )}
               </label>
             </>
+          )}
+
+          {/* Ellipse-specific controls */}
+          {selectedBlock.type === "ellipse" && (() => {
+            const eb = selectedBlock as EllipseBlock
+            return (
+              <>
+                <label className="flex items-center gap-2 text-xs text-neutral-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={eb.strokeEnabled}
+                    onChange={(e) => updateBlock(eb.id, { strokeEnabled: e.target.checked })}
+                  />
+                  Border
+                  {eb.strokeEnabled && (
+                    <>
+                      <input
+                        type="color"
+                        value={eb.strokeColor}
+                        onChange={(e) => updateBlock(eb.id, { strokeColor: e.target.value })}
+                        className="w-5 h-5 rounded cursor-pointer"
+                      />
+                      <input
+                        type="range" min={1} max={20}
+                        value={eb.strokeWidth}
+                        onChange={(e) => updateBlock(eb.id, { strokeWidth: Number(e.target.value) })}
+                        className="flex-1"
+                      />
+                    </>
+                  )}
+                </label>
+              </>
+            )
+          })()}
+
+          {/* Line-specific controls */}
+          {selectedBlock.type === "line" && (() => {
+            const lb = selectedBlock as LineBlock
+            return (
+              <>
+                <div>
+                  <span className="text-xs text-neutral-500 mb-1 block">Stroke color</span>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {PRESET_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => updateBlock(lb.id, { stroke: color })}
+                        className={`w-5 h-5 rounded-full border-2 transition-transform ${
+                          lb.stroke === color ? "border-blue-500 scale-110" : "border-neutral-300"
+                        }`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={lb.stroke}
+                      onChange={(e) => updateBlock(lb.id, { stroke: e.target.value })}
+                      className="w-5 h-5 rounded cursor-pointer"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-neutral-500 w-14">Width</span>
+                  <input
+                    type="range" min={1} max={30}
+                    value={lb.strokeWidth}
+                    onChange={(e) => updateBlock(lb.id, { strokeWidth: Number(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <span className="text-xs text-neutral-500 w-8 text-right">{lb.strokeWidth}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs text-neutral-500 cursor-pointer">
+                    <input
+                      type="checkbox" checked={lb.arrowEnd}
+                      onChange={(e) => updateBlock(lb.id, { arrowEnd: e.target.checked })}
+                    />
+                    Arrow end
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs text-neutral-500 cursor-pointer">
+                    <input
+                      type="checkbox" checked={lb.arrowStart}
+                      onChange={(e) => updateBlock(lb.id, { arrowStart: e.target.checked })}
+                    />
+                    Arrow start
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs text-neutral-500 cursor-pointer">
+                    <input
+                      type="checkbox" checked={lb.dash}
+                      onChange={(e) => updateBlock(lb.id, { dash: e.target.checked })}
+                    />
+                    Dashed
+                  </label>
+                </div>
+              </>
+            )
+          })()}
+
+          {/* Image-specific controls */}
+          {selectedBlock.type === "image" && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-neutral-500 w-14">Radius</span>
+              <input
+                type="range" min={0} max={100}
+                value={(selectedBlock as ImageBlock).cornerRadius}
+                onChange={(e) => updateBlock(selectedBlock.id, { cornerRadius: Number(e.target.value) })}
+                className="flex-1"
+              />
+              <span className="text-xs text-neutral-500 w-8 text-right">{(selectedBlock as ImageBlock).cornerRadius}</span>
+            </div>
           )}
 
           {/* Text-specific controls */}
