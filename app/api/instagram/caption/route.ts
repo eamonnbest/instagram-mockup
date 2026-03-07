@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     const message = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
+      max_tokens: 1024,
       messages: [
         {
           role: "user",
@@ -59,11 +59,18 @@ Rules:
 
     // Strip markdown code fences if present
     const raw = textBlock.text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim()
-    const parsed = JSON.parse(raw)
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      console.error("Failed to parse AI response as JSON:", raw.slice(0, 500))
+      throw new Error("AI returned an invalid response. Please try again.")
+    }
 
     // Validate that we got an array of strings
     if (!Array.isArray(parsed) || !parsed.every((item: unknown) => typeof item === "string")) {
-      throw new Error("Unexpected response format from AI")
+      throw new Error("AI returned an unexpected format. Please try again.")
     }
 
     return NextResponse.json({ success: true, captions: parsed })
