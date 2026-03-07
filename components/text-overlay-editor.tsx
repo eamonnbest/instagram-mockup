@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Plus, Trash2, Download, Type, Bold, Italic, AlignLeft, AlignCenter, AlignRight,
-  Square, Circle, ArrowRight, ImagePlus, ChevronUp, ChevronDown, Copy,
+  Square, Circle, ArrowRight, ImagePlus, ChevronUp, ChevronDown, Copy, Eraser, Loader2,
 } from "lucide-react"
 
 interface TextBlock {
@@ -270,6 +270,7 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks 
   const [blocks, setBlocks] = useState<CanvasBlock[]>(initialBlocks || [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [inlineEditId, setInlineEditId] = useState<string | null>(null)
+  const [removingBgId, setRemovingBgId] = useState<string | null>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const [imgDims, setImgDims] = useState({ x: 0, y: 0, w: CANVAS_SIZE, h: CANVAS_SIZE })
   const [imgError, setImgError] = useState(false)
@@ -1049,18 +1050,77 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks 
           })()}
 
           {/* Image-specific controls */}
-          {selectedBlock.type === "image" && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-neutral-500 w-14">Radius</span>
-              <input
-                type="range" min={0} max={100}
-                value={(selectedBlock as ImageBlock).cornerRadius}
-                onChange={(e) => updateBlock(selectedBlock.id, { cornerRadius: Number(e.target.value) })}
-                className="flex-1"
-              />
-              <span className="text-xs text-neutral-500 w-8 text-right">{(selectedBlock as ImageBlock).cornerRadius}</span>
-            </div>
-          )}
+          {selectedBlock.type === "image" && (() => {
+            const ib = selectedBlock as ImageBlock
+            return (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-neutral-500 w-14">Radius</span>
+                  <input
+                    type="range" min={0} max={100}
+                    value={ib.cornerRadius}
+                    onChange={(e) => updateBlock(ib.id, { cornerRadius: Number(e.target.value) })}
+                    className="flex-1"
+                  />
+                  <span className="text-xs text-neutral-500 w-8 text-right">{ib.cornerRadius}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  disabled={removingBgId !== null}
+                  onClick={async () => {
+                    if (removingBgId) return // guard against double-click
+                    const blockId = ib.id
+                    setRemovingBgId(blockId)
+                    try {
+                      // Upload the image to get a public URL (fal.ai needs a URL, not a data URL)
+                      const res = await fetch(ib.src)
+                      const blob = await res.blob()
+                      const file = new File([blob], "overlay.png", { type: "image/png" })
+                      const formData = new FormData()
+                      formData.append("file", file)
+                      const uploadRes = await fetch("/api/instagram/upload", { method: "POST", body: formData })
+                      if (!uploadRes.ok) throw new Error("Upload failed")
+                      const { imageUrl: publicUrl } = await uploadRes.json()
+
+                      // Call background removal API
+                      const bgRes = await fetch("/api/instagram/remove-bg", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ image_url: publicUrl }),
+                      })
+                      if (!bgRes.ok) throw new Error("Background removal failed")
+                      const { imageUrl: transparentUrl } = await bgRes.json()
+
+                      // Convert to data URL to avoid CORS tainted canvas on export
+                      const imgRes = await fetch(transparentUrl)
+                      const imgBlob = await imgRes.blob()
+                      const reader = new FileReader()
+                      const dataUrl = await new Promise<string>((resolve, reject) => {
+                        reader.onload = () => resolve(reader.result as string)
+                        reader.onerror = reject
+                        reader.readAsDataURL(imgBlob)
+                      })
+
+                      updateBlock(blockId, { src: dataUrl })
+                    } catch (error) {
+                      console.error("Remove background failed:", error)
+                      alert("Failed to remove background. Please try again.")
+                    } finally {
+                      setRemovingBgId(null)
+                    }
+                  }}
+                >
+                  {removingBgId === ib.id ? (
+                    <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Removing...</>
+                  ) : (
+                    <><Eraser className="w-3.5 h-3.5 mr-1.5" />Remove Background</>
+                  )}
+                </Button>
+              </>
+            )
+          })()}
 
           {/* Text-specific controls */}
           {selectedBlock.type === "text" && (() => {
