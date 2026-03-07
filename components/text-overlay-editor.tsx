@@ -121,11 +121,13 @@ function TextBlockGroup({
   isSelected,
   onSelect,
   onUpdate,
+  onStartInlineEdit,
 }: {
   block: TextBlock
   isSelected: boolean
   onSelect: () => void
   onUpdate: (updates: Record<string, unknown>) => void
+  onStartInlineEdit: () => void
 }) {
   const textRef = useRef<Konva.Text>(null)
   const [textHeight, setTextHeight] = useState(tb.fontSize * tb.lineHeight)
@@ -144,6 +146,8 @@ function TextBlockGroup({
       draggable
       onClick={onSelect}
       onTap={onSelect}
+      onDblClick={onStartInlineEdit}
+      onDblTap={onStartInlineEdit}
       onDragEnd={(e) => onUpdate({ x: e.target.x(), y: e.target.y() })}
       onTransformEnd={(e) => {
         const node = e.target
@@ -261,9 +265,11 @@ const FONT_FAMILIES = [
 
 export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks }: TextOverlayEditorProps) {
   const stageRef = useRef<Konva.Stage>(null)
+  const canvasContainerRef = useRef<HTMLDivElement>(null)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [blocks, setBlocks] = useState<CanvasBlock[]>(initialBlocks || [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [inlineEditId, setInlineEditId] = useState<string | null>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const [imgDims, setImgDims] = useState({ x: 0, y: 0, w: CANVAS_SIZE, h: CANVAS_SIZE })
   const [imgError, setImgError] = useState(false)
@@ -510,8 +516,80 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks 
   const selectedBlock = blocks.find((b) => b.id === selectedId)
   const scale = DISPLAY_SIZE / CANVAS_SIZE
 
+  // Inline text editing: creates an HTML textarea over the canvas on double-tap
+  const startInlineEdit = useCallback((blockId: string) => {
+    const block = blocks.find((b) => b.id === blockId)
+    if (!block || block.type !== "text" || !canvasContainerRef.current) return
+    const tb = block as TextBlock
+    setInlineEditId(blockId)
+    const s = DISPLAY_SIZE / CANVAS_SIZE
+
+    const container = canvasContainerRef.current
+    const textarea = document.createElement("textarea")
+    textarea.value = tb.text
+    textarea.style.position = "absolute"
+    textarea.style.left = `${tb.x * s}px`
+    textarea.style.top = `${tb.y * s}px`
+    textarea.style.width = `${tb.width * s}px`
+    textarea.style.minHeight = `${tb.fontSize * s * tb.lineHeight}px`
+    textarea.style.fontSize = `${Math.max(16, tb.fontSize * s)}px`
+    textarea.style.lineHeight = `${tb.lineHeight}`
+    textarea.style.fontFamily = tb.fontFamily
+    textarea.style.fontWeight = tb.fontStyle.includes("bold") ? "bold" : "normal"
+    textarea.style.fontStyle = tb.fontStyle.includes("italic") ? "italic" : "normal"
+    textarea.style.textAlign = tb.align
+    textarea.style.color = tb.fill
+    textarea.style.background = "transparent"
+    textarea.style.border = "2px solid #0095f6"
+    textarea.style.borderRadius = "4px"
+    textarea.style.outline = "none"
+    textarea.style.resize = "none"
+    textarea.style.overflow = "hidden"
+    textarea.style.padding = "2px 4px"
+    textarea.style.margin = "0"
+    textarea.style.zIndex = "10"
+    textarea.style.transformOrigin = "top left"
+    if (tb.rotation) {
+      textarea.style.transform = `rotate(${tb.rotation}deg)`
+    }
+
+    container.style.position = "relative"
+    container.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+
+    // Hide the Konva text while editing
+    if (stageRef.current) {
+      const node = stageRef.current.findOne(`#${blockId}`)
+      if (node) { node.hide(); stageRef.current.draw() }
+    }
+
+    const finishEdit = () => {
+      const newText = textarea.value
+      updateBlock(blockId, { text: newText })
+      textarea.remove()
+      setInlineEditId(null)
+      if (stageRef.current) {
+        const node = stageRef.current.findOne(`#${blockId}`)
+        if (node) { node.show(); stageRef.current.draw() }
+      }
+    }
+
+    textarea.addEventListener("blur", finishEdit)
+    textarea.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault()
+        textarea.blur()
+      }
+      if (e.key === "Escape") {
+        textarea.value = tb.text // revert
+        textarea.blur()
+      }
+    })
+  }, [blocks, updateBlock])
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
       {/* Canvas */}
       {imgError && (
         <div className="mx-auto bg-neutral-100 rounded-lg flex items-center justify-center text-sm text-neutral-500" style={{ width: DISPLAY_SIZE, height: DISPLAY_SIZE }}>
@@ -519,7 +597,8 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks 
         </div>
       )}
       <div
-        className={`mx-auto bg-neutral-900 rounded-lg overflow-hidden ${imgError ? "hidden" : ""}`}
+        ref={canvasContainerRef}
+        className={`mx-auto bg-neutral-900 rounded-lg overflow-hidden relative ${imgError ? "hidden" : ""}`}
         style={{ width: DISPLAY_SIZE, height: DISPLAY_SIZE }}
       >
         <Stage
@@ -661,6 +740,7 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks 
                   isSelected={selectedId === tb.id}
                   onSelect={() => setSelectedId(tb.id)}
                   onUpdate={(updates) => updateBlock(tb.id, updates)}
+                  onStartInlineEdit={() => startInlineEdit(tb.id)}
                 />
               )
             })}
@@ -992,7 +1072,7 @@ export function TextOverlayEditor({ imageUrl, onExport, onCancel, initialBlocks 
                   value={tb.text}
                   onChange={(e) => updateBlock(tb.id, { text: e.target.value })}
                   placeholder="Enter text..."
-                  className="text-sm min-h-[60px] resize-none"
+                  className="text-base min-h-[60px] resize-none"
                 />
 
                 {/* Font family */}
