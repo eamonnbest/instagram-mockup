@@ -34,6 +34,7 @@ function text(overrides: Partial<import("@/components/text-overlay-editor").Canv
     shadowEnabled: false, shadowColor: "#000000", shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0,
     strokeEnabled: false, strokeColor: "#000000", strokeWidth: 2,
     lineHeight: 1.1, letterSpacing: 0,
+    animation: "none" as const,
     ...overrides,
   } as import("@/components/text-overlay-editor").CanvasBlock
 }

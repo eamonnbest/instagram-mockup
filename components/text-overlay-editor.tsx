@@ -8,9 +8,10 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Plus, Trash2, Download, Type, Bold, Italic, AlignLeft, AlignCenter, AlignRight,
   Square, Circle, ArrowRight, ImagePlus, ChevronUp, ChevronDown, Copy, Eraser, Loader2,
-  LayoutTemplate,
+  LayoutTemplate, Play, Film,
 } from "lucide-react"
 import { templates, hydrateTemplate } from "@/lib/templates"
+import { recordCanvasToMp4, downloadBlob } from "@/lib/video-export"
 
 interface TextBlock {
   id: string
@@ -44,6 +45,8 @@ interface TextBlock {
   // Line height
   lineHeight: number
   letterSpacing: number
+  // Animation (for video export)
+  animation?: "none" | "fade-in" | "slide-up" | "slide-left" | "slide-right" | "typewriter" | "scale-in"
 }
 
 interface ShapeBlock {
@@ -277,6 +280,9 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
   const [inlineEditId, setInlineEditId] = useState<string | null>(null)
   const [removingBgId, setRemovingBgId] = useState<string | null>(null)
   const [showTemplates, setShowTemplates] = useState(false)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const [isExportingVideo, setIsExportingVideo] = useState(false)
+  const [videoExportProgress, setVideoExportProgress] = useState(0)
   const transformerRef = useRef<Konva.Transformer>(null)
   const [imgDims, setImgDims] = useState({ x: 0, y: 0, w: CANVAS_SIZE, h: CANVAS_SIZE })
   const [imgError, setImgError] = useState(false)
@@ -392,6 +398,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
       shadowEnabled: true, shadowColor: "#000000", shadowBlur: 8, shadowOffsetX: 2, shadowOffsetY: 2,
       strokeEnabled: false, strokeColor: "#000000", strokeWidth: 2,
       rotation: 0, lineHeight: 1.2, letterSpacing: 0,
+      animation: "none",
     }
     setBlocks((prev) => [...prev, block])
     setSelectedId(id)
@@ -523,6 +530,217 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
   useImperativeHandle(ref, () => ({
     triggerExport: handleExport,
   }), [handleExport])
+
+  // Track animation cleanup for unmount safety
+  const animCleanupRef = useRef<(() => void) | null>(null)
+  const animatingRef = useRef(false)
+
+  // Cleanup animations on unmount
+  useEffect(() => {
+    return () => {
+      if (animCleanupRef.current) animCleanupRef.current()
+    }
+  }, [])
+
+  // Easing function: cubic ease-out
+  const easeOut = (t: number) => 1 - Math.pow(1 - t, 3)
+
+  // Store original blocks for animation restore
+  const preAnimBlocksRef = useRef<CanvasBlock[] | null>(null)
+
+  // Animate by updating React state (blocks) on each frame — works with react-konva
+  const setupAnimations = useCallback(() => {
+    const animatedBlocks = blocks.filter((b) => b.type === "text" && (b as TextBlock).animation && (b as TextBlock).animation !== "none")
+    if (animatedBlocks.length === 0) return null
+
+    // Save original block state for restore
+    const originals = new Map<string, TextBlock>()
+    for (const b of animatedBlocks) {
+      originals.set(b.id, { ...(b as TextBlock) })
+    }
+    preAnimBlocksRef.current = [...blocks]
+
+    // Compute total duration
+    const tweenDurationMs = 600
+    let maxTypewriterMs = 0
+    for (const block of animatedBlocks) {
+      const tb = block as TextBlock
+      if (tb.animation === "typewriter") {
+        maxTypewriterMs = Math.max(maxTypewriterMs, tb.text.length * 40)
+      }
+    }
+    const totalDuration = Math.max(tweenDurationMs, maxTypewriterMs) + 400
+
+    const startTime = performance.now()
+    let rafId: number | null = null
+
+    const tick = () => {
+      const elapsed = performance.now() - startTime
+      const tweenProgress = Math.min(elapsed / tweenDurationMs, 1)
+      const easedProgress = easeOut(tweenProgress)
+
+      setBlocks((prev) => prev.map((block) => {
+        const orig = originals.get(block.id)
+        if (!orig) return block
+        const tb = block as TextBlock
+        const anim = orig.animation || "none"
+
+        if (anim === "fade-in") {
+          return { ...tb, opacity: orig.opacity * easedProgress }
+        } else if (anim === "slide-up") {
+          const offsetY = 80 * (1 - easedProgress)
+          return { ...tb, y: orig.y + offsetY, opacity: orig.opacity * easedProgress }
+        } else if (anim === "slide-left") {
+          const offsetX = 120 * (1 - easedProgress)
+          return { ...tb, x: orig.x + offsetX, opacity: orig.opacity * easedProgress }
+        } else if (anim === "slide-right") {
+          const offsetX = -120 * (1 - easedProgress)
+          return { ...tb, x: orig.x + offsetX, opacity: orig.opacity * easedProgress }
+        } else if (anim === "scale-in") {
+          // Scale via fontSize for text blocks (react-konva doesn't use scaleX/Y on Group)
+          const scaleFactor = 0.3 + 0.7 * easedProgress
+          return { ...tb, fontSize: orig.fontSize * scaleFactor, opacity: orig.opacity * easedProgress }
+        } else if (anim === "typewriter") {
+          const charCount = Math.floor((elapsed / 40))
+          const visibleText = orig.text.slice(0, Math.min(charCount, orig.text.length))
+          return { ...tb, text: visibleText }
+        }
+        return block
+      }))
+
+      if (elapsed < totalDuration) {
+        rafId = requestAnimationFrame(tick)
+      }
+    }
+
+    // Set initial state (everything hidden/offset)
+    setBlocks((prev) => prev.map((block) => {
+      const orig = originals.get(block.id)
+      if (!orig) return block
+      const anim = orig.animation || "none"
+      const tb = block as TextBlock
+      if (anim === "fade-in") return { ...tb, opacity: 0 }
+      if (anim === "slide-up") return { ...tb, y: orig.y + 80, opacity: 0 }
+      if (anim === "slide-left") return { ...tb, x: orig.x + 120, opacity: 0 }
+      if (anim === "slide-right") return { ...tb, x: orig.x - 120, opacity: 0 }
+      if (anim === "scale-in") return { ...tb, fontSize: orig.fontSize * 0.3, opacity: 0 }
+      if (anim === "typewriter") return { ...tb, text: "" }
+      return block
+    }))
+
+    // Start animation on next frame
+    rafId = requestAnimationFrame(tick)
+
+    const cleanup = () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      // Restore original blocks
+      if (preAnimBlocksRef.current) {
+        setBlocks(preAnimBlocksRef.current)
+        preAnimBlocksRef.current = null
+      }
+    }
+
+    return { cleanup, totalDuration }
+  }, [blocks])
+
+  const previewAnimations = useCallback(() => {
+    if (animatingRef.current) return
+
+    animatingRef.current = true
+    setIsAnimating(true)
+    setSelectedId(null)
+
+    const result = setupAnimations()
+    if (!result) {
+      animatingRef.current = false
+      setIsAnimating(false)
+      return
+    }
+
+    let cleanupTimeout: ReturnType<typeof setTimeout> | null = null
+
+    const fullCleanup = () => {
+      if (cleanupTimeout) { clearTimeout(cleanupTimeout); cleanupTimeout = null }
+      result.cleanup()
+      animatingRef.current = false
+      setIsAnimating(false)
+      animCleanupRef.current = null
+    }
+
+    animCleanupRef.current = fullCleanup
+    cleanupTimeout = setTimeout(fullCleanup, result.totalDuration)
+  }, [setupAnimations])
+
+  const exportVideo = useCallback(async () => {
+    const stage = stageRef.current
+    const K = konvaRef.current
+    if (!stage || !K || animatingRef.current) return
+
+    animatingRef.current = true
+    setIsExportingVideo(true)
+    setIsAnimating(true)
+    setSelectedId(null)
+    setVideoExportProgress(0)
+
+    // Temporarily resize stage to full resolution for recording
+    const origWidth = stage.width()
+    const origHeight = stage.height()
+    const origScaleX = stage.scaleX()
+    const origScaleY = stage.scaleY()
+    stage.width(CANVAS_SIZE)
+    stage.height(CANVAS_SIZE)
+    stage.scaleX(1)
+    stage.scaleY(1)
+    stage.batchDraw()
+
+    try {
+      // Get the canvas element from the stage container
+      const container = stage.container()
+      const canvas = container.querySelector("canvas")
+      if (!canvas) throw new Error("No canvas element found")
+
+      // Compute duration from animation setup (dry check)
+      const animatedBlocks = blocks.filter((b) => b.type === "text" && (b as TextBlock).animation && (b as TextBlock).animation !== "none")
+      let maxTypewriterMs = 0
+      for (const block of animatedBlocks) {
+        const tb = block as TextBlock
+        if (tb.animation === "typewriter") maxTypewriterMs = Math.max(maxTypewriterMs, tb.text.length * 40)
+      }
+      const recordDuration = Math.max(600, maxTypewriterMs) + 900
+
+      // Record canvas — animations start via callback to avoid missing first frames
+      const animResultRef: { current: { cleanup: () => void; totalDuration: number } | null } = { current: null }
+      const mp4Blob = await recordCanvasToMp4(
+        canvas,
+        recordDuration,
+        () => { animResultRef.current = setupAnimations() },
+        30,
+        (p) => setVideoExportProgress(p),
+      )
+
+      // Cleanup animations
+      animResultRef.current?.cleanup()
+
+      // Download the MP4
+      downloadBlob(mp4Blob, `lattify-post-${Date.now()}.mp4`)
+    } catch (error) {
+      console.error("Video export failed:", error)
+      alert("Video export failed. Please try again.")
+    } finally {
+      // Restore stage to display size
+      stage.width(origWidth)
+      stage.height(origHeight)
+      stage.scaleX(origScaleX)
+      stage.scaleY(origScaleY)
+      stage.batchDraw()
+
+      animatingRef.current = false
+      setIsAnimating(false)
+      setIsExportingVideo(false)
+      setVideoExportProgress(0)
+      animCleanupRef.current = null
+    }
+  }, [blocks, setupAnimations])
 
   const selectedBlock = blocks.find((b) => b.id === selectedId)
   const scale = DISPLAY_SIZE / CANVAS_SIZE
@@ -833,6 +1051,41 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
           </div>
         )}
       </div>
+
+      {/* Preview + Export animation */}
+      {blocks.some((b) => b.type === "text" && (b as TextBlock).animation && (b as TextBlock).animation !== "none") && (
+        <div className="flex gap-2">
+          <Button
+            onClick={previewAnimations}
+            disabled={isAnimating}
+            variant="outline"
+            size="sm"
+            className="flex-1"
+          >
+            <Play className="w-4 h-4 mr-1.5" />
+            {isAnimating && !isExportingVideo ? "Playing..." : "Preview"}
+          </Button>
+          <Button
+            onClick={exportVideo}
+            disabled={isAnimating}
+            variant="outline"
+            size="sm"
+            className="flex-1"
+          >
+            {isExportingVideo ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                {Math.round(videoExportProgress * 100)}%
+              </>
+            ) : (
+              <>
+                <Film className="w-4 h-4 mr-1.5" />
+                Export MP4
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Background filters — shown when nothing selected */}
       {!selectedBlock && (
@@ -1380,6 +1633,24 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
                       />
                     </div>
                   )}
+                </div>
+
+                {/* Animation */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-neutral-500 w-14">Animate</span>
+                  <select
+                    value={tb.animation || "none"}
+                    onChange={(e) => updateBlock(tb.id, { animation: e.target.value })}
+                    className="flex-1 px-2 py-1.5 text-xs border border-neutral-200 rounded-md bg-white"
+                  >
+                    <option value="none">None</option>
+                    <option value="fade-in">Fade In</option>
+                    <option value="slide-up">Slide Up</option>
+                    <option value="slide-left">Slide Left</option>
+                    <option value="slide-right">Slide Right</option>
+                    <option value="typewriter">Typewriter</option>
+                    <option value="scale-in">Scale In</option>
+                  </select>
                 </div>
               </>
             )

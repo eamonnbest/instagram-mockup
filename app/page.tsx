@@ -27,6 +27,7 @@ import {
   Download,
   ClipboardCopy,
   Pencil,
+  Megaphone,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -470,6 +471,9 @@ export default function InstagramPage() {
         <div className="md:hidden flex items-center justify-between px-4 py-2.5">
           <Image src="/instagram-logo.png" alt="Instagram" width={110} height={32} className="h-7 w-auto" />
           <div className="flex items-center gap-5">
+            <Link href="/ads">
+              <Megaphone className="w-6 h-6" />
+            </Link>
             <Link href="/new">
               <Plus className="w-6 h-6" />
             </Link>
@@ -490,6 +494,9 @@ export default function InstagramPage() {
             priority
           />
           <div className="flex items-center gap-4">
+            <Link href="/ads" className="text-sm font-medium hover:opacity-70">
+              Ads
+            </Link>
             <Link href="/calendar" className="text-sm font-medium hover:opacity-70">
               Schedule
             </Link>
