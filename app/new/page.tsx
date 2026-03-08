@@ -26,6 +26,14 @@ export default function NewPostPageWrapper() {
   )
 }
 
+const REALISM_CHIPS = [
+  { id: "real-people", label: "Real people", prompt: "person should look like a real everyday person, not a model, average attractiveness, natural skin texture with visible pores and imperfections, do not smooth or beautify" },
+  { id: "unposed", label: "Unposed", prompt: "natural candid posture and expression, not posed like a model, natural eye direction" },
+  { id: "phone-snap", label: "Phone snap", prompt: "natural photo, do not enhance or beautify, keep original lighting and skin texture, slight camera imperfections" },
+  { id: "disposable", label: "Disposable", prompt: "subtle film texture, slightly muted colors, do not over-stylize or add heavy grain" },
+  { id: "raw-photo", label: "Raw photo", prompt: "do not color correct, do not enhance lighting, do not sharpen, keep the image as-is with natural imperfections" },
+] as const
+
 function NewPostPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -64,6 +72,45 @@ function NewPostPage() {
   const [overlayBlocksMap, setOverlayBlocksMap] = useState<Record<number, CanvasBlock[]>>({})
   const [originalImageUrls, setOriginalImageUrls] = useState<string[]>([])
   const [generatingTemplate, setGeneratingTemplate] = useState(false)
+  const [activeRealismChips, setActiveRealismChips] = useState<Set<string>>(new Set())
+
+  function toggleRealismChip(chipId: string) {
+    const chip = REALISM_CHIPS.find((c) => c.id === chipId)
+    if (!chip) return
+
+    const isActive = activeRealismChips.has(chipId)
+    const next = new Set(activeRealismChips)
+
+    if (isActive) {
+      next.delete(chipId)
+      setCustomPrompt((p) => {
+        return p.replace(chip.prompt, "").replace(/,\s*,/g, ",").replace(/^,\s*|,\s*$/g, "").trim()
+      })
+    } else {
+      next.add(chipId)
+      setCustomPrompt((p) => {
+        const trimmed = p.trim()
+        return trimmed ? `${trimmed}, ${chip.prompt}` : chip.prompt
+      })
+    }
+
+    setActiveRealismChips(next)
+  }
+
+  // Deactivate chips whose text was manually edited out of the prompt
+  useEffect(() => {
+    if (activeRealismChips.size === 0) return
+    const next = new Set(activeRealismChips)
+    let changed = false
+    for (const chipId of activeRealismChips) {
+      const chip = REALISM_CHIPS.find((c) => c.id === chipId)
+      if (chip && !customPrompt.includes(chip.prompt)) {
+        next.delete(chipId)
+        changed = true
+      }
+    }
+    if (changed) setActiveRealismChips(next)
+  }, [customPrompt, activeRealismChips])
 
   // Load existing post data in edit mode
   useEffect(() => {
@@ -162,7 +209,7 @@ function NewPostPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           referenceImage
-            ? { prompt: customPrompt, referenceImageUrl: referenceImage, model: imageModel, referenceStrength: referencePreset }
+            ? { prompt: customPrompt, referenceImageUrl: referenceImage, model: imageModel, referenceStrength: referencePreset, realismMode: activeRealismChips.size > 0 }
             : { prompt: customPrompt, model: imageModel },
         ),
       })
@@ -978,6 +1025,27 @@ function NewPostPage() {
                         </>
                       )}
                     </select>
+
+                    {/* Add Realism chips */}
+                    <div className="mb-3">
+                      <span className="text-xs font-medium text-neutral-500 mb-1.5 block">Add realism</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {REALISM_CHIPS.map((chip) => (
+                          <button
+                            key={chip.id}
+                            type="button"
+                            onClick={() => toggleRealismChip(chip.id)}
+                            className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                              activeRealismChips.has(chip.id)
+                                ? "bg-black text-white border-black"
+                                : "bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400"
+                            }`}
+                          >
+                            {chip.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
                     <Textarea
                       value={customPrompt}

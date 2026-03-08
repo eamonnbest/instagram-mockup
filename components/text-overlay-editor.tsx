@@ -307,6 +307,10 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     blur: 0,
     grayscale: false,
     sepia: false,
+    grain: 0,
+    vignette: 0,
+    chromaticAberration: 0,
+    colorCast: 0, // negative = cool (blue), positive = warm (orange)
   })
 
   // Load image with cover-crop
@@ -354,6 +358,86 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     import("konva").then((m) => { konvaRef.current = m.default })
   }, [])
 
+  // Custom Konva filter: film grain (random noise overlay)
+  const grainAmountRef = useRef(0)
+  const grainFilter = useRef((imageData: ImageData) => {
+    const amount = grainAmountRef.current
+    if (amount === 0) return
+    const d = imageData.data
+    for (let i = 0; i < d.length; i += 4) {
+      const noise = (Math.random() - 0.5) * amount * 80
+      d[i] = Math.min(255, Math.max(0, d[i] + noise))
+      d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + noise))
+      d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + noise))
+    }
+  }).current
+
+  // Custom Konva filter: vignette (darken edges)
+  const vignetteAmountRef = useRef(0)
+  const vignetteFilter = useRef((imageData: ImageData) => {
+    const amount = vignetteAmountRef.current
+    if (amount === 0) return
+    const { width, height, data: d } = imageData
+    const cx = width / 2, cy = height / 2
+    const maxDist = Math.sqrt(cx * cx + cy * cy)
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4
+        const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) / maxDist
+        const factor = 1 - dist * dist * amount
+        d[i] = Math.max(0, d[i] * factor)
+        d[i + 1] = Math.max(0, d[i + 1] * factor)
+        d[i + 2] = Math.max(0, d[i + 2] * factor)
+      }
+    }
+  }).current
+
+  // Custom Konva filter: chromatic aberration (RGB channel offset)
+  const chromAbAmountRef = useRef(0)
+  const chromaticAberrationFilter = useRef((imageData: ImageData) => {
+    const amount = chromAbAmountRef.current
+    if (amount === 0) return
+    const { width, height, data: d } = imageData
+    const offset = Math.round(amount * 6)
+    const copy = new Uint8ClampedArray(d)
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4
+        // Shift red channel left, blue channel right
+        const rSrc = (y * width + Math.min(width - 1, x + offset)) * 4
+        const bSrc = (y * width + Math.max(0, x - offset)) * 4
+        d[i] = copy[rSrc]         // red from shifted position
+        d[i + 2] = copy[bSrc + 2] // blue from shifted position
+        // green stays in place
+      }
+    }
+  }).current
+
+  // Custom Konva filter: color cast (warm/cool shift)
+  const colorCastAmountRef = useRef(0)
+  const colorCastFilter = useRef((imageData: ImageData) => {
+    const amount = colorCastAmountRef.current
+    if (amount === 0) return
+    const d = imageData.data
+    const warmR = amount > 0 ? amount * 25 : 0
+    const warmG = amount > 0 ? amount * 10 : 0
+    const coolB = amount < 0 ? -amount * 25 : 0
+    const coolG = amount < 0 ? -amount * 5 : 0
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = Math.min(255, d[i] + warmR)
+      d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + warmG - coolG))
+      d[i + 2] = Math.min(255, d[i + 2] + coolB)
+    }
+  }).current
+
+  // Sync filter refs with state
+  useEffect(() => {
+    grainAmountRef.current = filters.grain
+    vignetteAmountRef.current = filters.vignette
+    chromAbAmountRef.current = filters.chromaticAberration
+    colorCastAmountRef.current = filters.colorCast
+  }, [filters.grain, filters.vignette, filters.chromaticAberration, filters.colorCast])
+
   // Apply filters to background image
   useEffect(() => {
     const node = bgImageRef.current
@@ -367,6 +451,11 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     if (filters.grayscale) activeFilters.push(K.Filters.Grayscale)
     if (filters.saturation !== 0) activeFilters.push(K.Filters.HSL)
     if (filters.sepia) activeFilters.push(K.Filters.Sepia)
+    // Custom realism filters
+    if (filters.grain > 0) activeFilters.push(grainFilter as unknown as typeof K.Filters.Brighten)
+    if (filters.vignette > 0) activeFilters.push(vignetteFilter as unknown as typeof K.Filters.Brighten)
+    if (filters.chromaticAberration > 0) activeFilters.push(chromaticAberrationFilter as unknown as typeof K.Filters.Brighten)
+    if (filters.colorCast !== 0) activeFilters.push(colorCastFilter as unknown as typeof K.Filters.Brighten)
 
     if (activeFilters.length > 0) {
       node.filters(activeFilters)
@@ -382,7 +471,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
       node.clearCache()
     }
     node.getLayer()?.batchDraw()
-  }, [filters, image])
+  }, [filters, image, grainFilter, vignetteFilter, chromaticAberrationFilter, colorCastFilter])
 
   function addTextBlock() {
     const id = nextId("text")
@@ -1146,6 +1235,49 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
               />
               Sepia
             </label>
+          </div>
+          <div className="border-t border-neutral-200 pt-2 mt-2">
+            <span className="text-xs font-medium text-neutral-700">Realism</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500 w-16">Grain</span>
+            <input
+              type="range" min={0} max={1} step={0.05}
+              value={filters.grain}
+              onChange={(e) => setFilters((f) => ({ ...f, grain: Number(e.target.value) }))}
+              className="flex-1"
+            />
+            <span className="text-xs text-neutral-500 w-8 text-right">{Math.round(filters.grain * 100)}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500 w-16">Vignette</span>
+            <input
+              type="range" min={0} max={2} step={0.1}
+              value={filters.vignette}
+              onChange={(e) => setFilters((f) => ({ ...f, vignette: Number(e.target.value) }))}
+              className="flex-1"
+            />
+            <span className="text-xs text-neutral-500 w-8 text-right">{filters.vignette.toFixed(1)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500 w-16">Chrom. Ab.</span>
+            <input
+              type="range" min={0} max={1} step={0.05}
+              value={filters.chromaticAberration}
+              onChange={(e) => setFilters((f) => ({ ...f, chromaticAberration: Number(e.target.value) }))}
+              className="flex-1"
+            />
+            <span className="text-xs text-neutral-500 w-8 text-right">{Math.round(filters.chromaticAberration * 100)}%</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500 w-16">Color Cast</span>
+            <input
+              type="range" min={-1} max={1} step={0.05}
+              value={filters.colorCast}
+              onChange={(e) => setFilters((f) => ({ ...f, colorCast: Number(e.target.value) }))}
+              className="flex-1"
+            />
+            <span className="text-xs text-neutral-500 w-8 text-right">{filters.colorCast > 0 ? "warm" : filters.colorCast < 0 ? "cool" : "—"}</span>
           </div>
         </div>
       )}

@@ -35,7 +35,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, delayMs = 2000
 export async function POST(request: NextRequest) {
   try {
     ensureFalConfig()
-    const { prompt, model, referenceImageUrl, referenceStrength } = await request.json()
+    const { prompt, model, referenceImageUrl, referenceStrength, realismMode } = await request.json()
 
     if ((!prompt || !prompt.trim()) && !referenceImageUrl) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 })
@@ -56,7 +56,9 @@ export async function POST(request: NextRequest) {
       let result
       if (img2imgModel === "fal-ai/gpt-image-1.5" && preset === "same-vibe") {
         // GPT Image "Same vibe": use /edit with low fidelity + divergence instruction
-        const sameVibePrefix = "Generate a new, original image inspired by the reference. Change the people, their clothing, specific objects, and small details. Keep the same general setting, mood, lighting, and composition."
+        const sameVibePrefix = realismMode
+          ? "Generate a new, original image inspired by the reference. Change the people, their clothing, specific objects, and small details. Keep the same general setting, mood, lighting, and composition. The person should look like a real everyday person, not a model. Preserve any imperfections in lighting, framing, and skin texture. Do not beautify, smooth, or enhance the image."
+          : "Generate a new, original image inspired by the reference. Change the people, their clothing, specific objects, and small details. Keep the same general setting, mood, lighting, and composition."
         const sameVibePrompt = finalPrompt !== "Edit this image"
           ? `${sameVibePrefix}\n\nAdditional direction: ${finalPrompt}`
           : sameVibePrefix
@@ -95,7 +97,9 @@ export async function POST(request: NextRequest) {
             role: "user",
             content: [
               { type: "image", source: { type: "url", url: referenceImageUrl } },
-              { type: "text", text: "Describe this image in detail for an AI image generator. Include: setting/location, lighting, mood/atmosphere, people (poses, clothing, age range — but not identifiable features), objects, colors, composition, camera angle. Be specific but describe the *type* of scene, not the exact image. Write it as a generation prompt." },
+              { type: "text", text: realismMode
+                ? "Describe this image in detail for an AI image generator. Include: setting/location, lighting (including any imperfections like harsh shadows, uneven exposure, mixed color temperatures), mood/atmosphere, people (poses, clothing, age range, body type, natural skin texture including any visible blemishes or imperfections — but not identifiable features), objects, colors, composition, camera angle. Emphasize anything that makes this look like a real unretouched photo rather than a stock image: awkward poses, imperfect framing, natural unflattering lighting, casual expressions. Be specific but describe the *type* of scene, not the exact image. Write it as a generation prompt."
+                : "Describe this image in detail for an AI image generator. Include: setting/location, lighting, mood/atmosphere, people (poses, clothing, age range — but not identifiable features), objects, colors, composition, camera angle. Be specific but describe the *type* of scene, not the exact image. Write it as a generation prompt." },
             ],
           }],
         })
