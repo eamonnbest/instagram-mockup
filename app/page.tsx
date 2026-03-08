@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import {
@@ -18,8 +18,8 @@ import {
   Eye,
   EyeOff,
   StickyNote,
-  Tag,
   X,
+  ChevronDown,
   Copy,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight,
@@ -63,6 +63,39 @@ interface InstagramPost {
   tags: string[]
   carousel_images: string[]
   scheduled_for: string | null
+}
+
+interface NoteEntry {
+  author: string
+  text: string
+  timestamp: string
+}
+
+function parseNotes(raw: string | null): NoteEntry[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed
+  } catch {
+    // Legacy plain-text note — wrap it
+    if (raw.trim()) return [{ author: "?", text: raw, timestamp: new Date().toISOString() }]
+  }
+  return []
+}
+
+function serializeNotes(entries: NoteEntry[]): string {
+  return JSON.stringify(entries)
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
 }
 
 interface Profile {
@@ -232,9 +265,13 @@ export default function InstagramPage() {
   const [editValue, setEditValue] = useState("")
   const [loading, setLoading] = useState(true)
   const [showAvatarPicker, setShowAvatarPicker] = useState(false)
-  const [editNotes, setEditNotes] = useState("")
-  const [editTags, setEditTags] = useState<string[]>([])
-  const [newTag, setNewTag] = useState("")
+  const [noteEntries, setNoteEntries] = useState<NoteEntry[]>([])
+  const [newNote, setNewNote] = useState("")
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [noteAuthor, setNoteAuthor] = useState(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("note-author") || "E"
+    return "E"
+  })
   const [modalCarouselIndex, setModalCarouselIndex] = useState(0)
   const [showPalette, setShowPalette] = useState(false)
   const [copiedCaption, setCopiedCaption] = useState(false)
@@ -342,56 +379,58 @@ export default function InstagramPage() {
   function openPost(post: InstagramPost) {
     setSelectedPost(post)
     setEditCaption(post.caption || "")
-    setEditNotes(post.notes || "")
-    setEditTags(post.tags || [])
-    setNewTag("")
+    setNoteEntries(parseNotes(post.notes))
+    setNewNote("")
+    setNotesOpen(false)
     setModalCarouselIndex(0)
     setIsEditing(false)
   }
 
-  async function saveNotes() {
-    if (!selectedPost) return
+  function changeNoteAuthor(author: string) {
+    setNoteAuthor(author)
+    localStorage.setItem("note-author", author)
+  }
+
+  async function addNote() {
+    if (!selectedPost || !newNote.trim()) return
+    const entry: NoteEntry = { author: noteAuthor, text: newNote.trim(), timestamp: new Date().toISOString() }
+    const updated = [...noteEntries, entry]
+    setNoteEntries(updated)
+    setNewNote("")
+    const serialized = serializeNotes(updated)
     try {
       await fetch("/api/instagram/posts", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: selectedPost.id, notes: editNotes }),
+        body: JSON.stringify({ id: selectedPost.id, notes: serialized }),
       })
-      const updated = { ...selectedPost, notes: editNotes }
-      setPosts((prev) => prev.map((p) => (p.id === selectedPost.id ? updated : p)))
-      setSelectedPost(updated)
+      const updatedPost = { ...selectedPost, notes: serialized }
+      setPosts((prev) => prev.map((p) => (p.id === selectedPost.id ? updatedPost : p)))
+      setSelectedPost(updatedPost)
     } catch (error) {
-      console.error("Failed to save notes:", error)
+      console.error("Failed to save note:", error)
     }
   }
 
-  async function saveTags(updatedTags: string[]) {
+  async function deleteNote(index: number) {
     if (!selectedPost) return
-    setEditTags(updatedTags)
+    const updated = noteEntries.filter((_, i) => i !== index)
+    setNoteEntries(updated)
+    const serialized = serializeNotes(updated)
     try {
       await fetch("/api/instagram/posts", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: selectedPost.id, tags: updatedTags }),
+        body: JSON.stringify({ id: selectedPost.id, notes: serialized }),
       })
-      const updated = { ...selectedPost, tags: updatedTags }
-      setPosts((prev) => prev.map((p) => (p.id === selectedPost.id ? updated : p)))
-      setSelectedPost(updated)
+      const updatedPost = { ...selectedPost, notes: serialized }
+      setPosts((prev) => prev.map((p) => (p.id === selectedPost.id ? updatedPost : p)))
+      setSelectedPost(updatedPost)
     } catch (error) {
-      console.error("Failed to save tags:", error)
+      console.error("Failed to delete note:", error)
     }
   }
 
-  function addTag() {
-    const tag = newTag.trim()
-    if (!tag || editTags.includes(tag)) return
-    saveTags([...editTags, tag])
-    setNewTag("")
-  }
-
-  function removeTag(tag: string) {
-    saveTags(editTags.filter((t) => t !== tag))
-  }
 
   const extractAllColors = useCallback(async () => {
     const results: Record<string, string[]> = {}
@@ -944,33 +983,58 @@ export default function InstagramPage() {
                   )}
                 </div>
 
-                {/* Tags */}
-                <div className="px-3 py-2 border-t border-neutral-100">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <Tag className="w-3 h-3 text-neutral-400" />
-                    <span className="text-xs font-medium text-neutral-500">Tags</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 mb-1.5">
-                    {editTags.map((tag) => (
-                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
-                        {tag}
-                        <button onClick={() => removeTag(tag)} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex gap-1.5">
-                    <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTag()} placeholder="Add tag..." className="h-7 text-xs flex-1" />
-                    <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addTag} disabled={!newTag.trim()}>Add</Button>
-                  </div>
-                </div>
-
                 {/* Notes */}
                 <div className="px-3 py-2 border-t border-neutral-100">
-                  <div className="flex items-center gap-1.5 mb-1.5">
+                  <button onClick={() => setNotesOpen(!notesOpen)} className="flex items-center gap-1.5 w-full">
                     <StickyNote className="w-3 h-3 text-neutral-400" />
                     <span className="text-xs font-medium text-neutral-500">Notes</span>
-                  </div>
-                  <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} onBlur={saveNotes} placeholder="Add internal notes..." className="text-xs min-h-[50px] resize-none" />
+                    {noteEntries.length > 1 && !notesOpen && <span className="text-[10px] text-neutral-400">+{noteEntries.length - 1} more</span>}
+                    <ChevronDown className={`w-3 h-3 text-neutral-400 ml-auto transition-transform ${notesOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {/* Latest note always visible */}
+                  {!notesOpen && noteEntries.length > 0 && (
+                    <div className="mt-2 flex gap-2 items-start">
+                      <span className="w-5 h-5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-500 flex items-center justify-center shrink-0 mt-0.5">{noteEntries[noteEntries.length - 1].author}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-zinc-700 line-clamp-2">{noteEntries[noteEntries.length - 1].text}</p>
+                        <span className="text-[10px] text-zinc-400">{timeAgo(noteEntries[noteEntries.length - 1].timestamp)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {notesOpen && (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center gap-1 text-[10px] text-neutral-400">
+                        <span>Posting as</span>
+                        {["E", "H"].map((a) => (
+                          <button
+                            key={a}
+                            onClick={() => changeNoteAuthor(a)}
+                            className={`w-5 h-5 rounded-full text-[10px] font-bold ${noteAuthor === a ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}
+                          >
+                            {a}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="max-h-[200px] overflow-y-auto space-y-1.5">
+                        {noteEntries.map((entry, i) => (
+                          <div key={i} className="group flex gap-2 items-start">
+                            <span className="w-5 h-5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-500 flex items-center justify-center shrink-0 mt-0.5">{entry.author}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-zinc-700">{entry.text}</p>
+                              <span className="text-[10px] text-zinc-400">{timeAgo(entry.timestamp)}</span>
+                            </div>
+                            <button onClick={() => deleteNote(i)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-50 rounded">
+                              <X className="w-3 h-3 text-red-400" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Add a note..." className="h-7 text-xs flex-1" />
+                        <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addNote} disabled={!newNote.trim()}>Add</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Edit/Delete controls */}
@@ -1092,35 +1156,58 @@ export default function InstagramPage() {
                   </div>
                 </div>
 
-                {/* Notes & Tags */}
-                <div className="border-t border-neutral-200 p-3 space-y-3">
-                  {/* Tags */}
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <Tag className="w-3 h-3 text-neutral-400" />
-                      <span className="text-xs font-medium text-neutral-500">Tags</span>
+                {/* Notes */}
+                <div className="border-t border-neutral-200 p-3">
+                  <button onClick={() => setNotesOpen(!notesOpen)} className="flex items-center gap-1.5 w-full">
+                    <StickyNote className="w-3 h-3 text-neutral-400" />
+                    <span className="text-xs font-medium text-neutral-500">Notes</span>
+                    {noteEntries.length > 1 && !notesOpen && <span className="text-[10px] text-neutral-400">+{noteEntries.length - 1} more</span>}
+                    <ChevronDown className={`w-3 h-3 text-neutral-400 ml-auto transition-transform ${notesOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {/* Latest note always visible */}
+                  {!notesOpen && noteEntries.length > 0 && (
+                    <div className="mt-2 flex gap-2 items-start">
+                      <span className="w-5 h-5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-500 flex items-center justify-center shrink-0 mt-0.5">{noteEntries[noteEntries.length - 1].author}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-zinc-700 line-clamp-2">{noteEntries[noteEntries.length - 1].text}</p>
+                        <span className="text-[10px] text-zinc-400">{timeAgo(noteEntries[noteEntries.length - 1].timestamp)}</span>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-1.5 mb-1.5">
-                      {editTags.map((tag) => (
-                        <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full">
-                          {tag}
-                          <button onClick={() => removeTag(tag)} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
-                        </span>
-                      ))}
+                  )}
+                  {notesOpen && (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center gap-1 text-[10px] text-neutral-400">
+                        <span>Posting as</span>
+                        {["E", "H"].map((a) => (
+                          <button
+                            key={a}
+                            onClick={() => changeNoteAuthor(a)}
+                            className={`w-5 h-5 rounded-full text-[10px] font-bold ${noteAuthor === a ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}
+                          >
+                            {a}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="max-h-[200px] overflow-y-auto space-y-1.5">
+                        {noteEntries.map((entry, i) => (
+                          <div key={i} className="group flex gap-2 items-start">
+                            <span className="w-5 h-5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-500 flex items-center justify-center shrink-0 mt-0.5">{entry.author}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-zinc-700">{entry.text}</p>
+                              <span className="text-[10px] text-zinc-400">{timeAgo(entry.timestamp)}</span>
+                            </div>
+                            <button onClick={() => deleteNote(i)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-50 rounded">
+                              <X className="w-3 h-3 text-red-400" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Add a note..." className="h-7 text-xs flex-1" />
+                        <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addNote} disabled={!newNote.trim()}>Add</Button>
+                      </div>
                     </div>
-                    <div className="flex gap-1.5">
-                      <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTag()} placeholder="Add tag..." className="h-7 text-xs flex-1" />
-                      <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addTag} disabled={!newTag.trim()}>Add</Button>
-                    </div>
-                  </div>
-                  {/* Notes */}
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <StickyNote className="w-3 h-3 text-neutral-400" />
-                      <span className="text-xs font-medium text-neutral-500">Notes</span>
-                    </div>
-                    <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} onBlur={saveNotes} placeholder="Add internal notes..." className="text-xs min-h-[50px] resize-none" />
-                  </div>
+                  )}
                 </div>
 
                 {/* Actions */}
