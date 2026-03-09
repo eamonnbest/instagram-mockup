@@ -300,6 +300,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
   const nextId = (prefix: string) => `${prefix}-${++idCounter.current}`
   const overlayFileRef = useRef<HTMLInputElement>(null)
   const bgImageRef = useRef<Konva.Image>(null)
+  const realismDebounceRef = useRef<ReturnType<typeof setTimeout>>(null)
   const [filters, setFilters] = useState({
     brightness: 0,
     contrast: 0,
@@ -307,10 +308,8 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     blur: 0,
     grayscale: false,
     sepia: false,
-    grain: 0,
-    vignette: 0,
-    chromaticAberration: 0,
-    colorCast: 0, // negative = cool (blue), positive = warm (orange)
+    realismPreset: null as null | "phone" | "dslr" | "film" | "disposable",
+    realismIntensity: 0.5,
   })
 
   // Load image with cover-crop
@@ -358,85 +357,132 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     import("konva").then((m) => { konvaRef.current = m.default })
   }, [])
 
-  // Custom Konva filter: film grain (random noise overlay)
-  const grainAmountRef = useRef(0)
-  const grainFilter = useRef((imageData: ImageData) => {
-    const amount = grainAmountRef.current
-    if (amount === 0) return
-    const d = imageData.data
-    for (let i = 0; i < d.length; i += 4) {
-      const noise = (Math.random() - 0.5) * amount * 80
-      d[i] = Math.min(255, Math.max(0, d[i] + noise))
-      d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + noise))
-      d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + noise))
-    }
-  }).current
+  // Realism preset definitions — each preset is a recipe of stacked techniques
+  const REALISM_PRESETS = {
+    phone: { noise: 0.25, vignette: 0.15, warmShift: 8, highlightClip: 6, barrelDistortion: 0.008, liftBlacks: 15, desaturate: 0.08, halation: 0 },
+    dslr: { noise: 0.1, vignette: 0.25, warmShift: 0, highlightClip: 3, barrelDistortion: -0.003, liftBlacks: 5, desaturate: 0.05, halation: 0 },
+    film: { noise: 0.4, vignette: 0.1, warmShift: 5, highlightClip: 10, barrelDistortion: 0.005, liftBlacks: 25, desaturate: 0.15, halation: 0.3 },
+    disposable: { noise: 0.6, vignette: 0.5, warmShift: 15, highlightClip: 12, barrelDistortion: 0.015, liftBlacks: 30, desaturate: 0.12, halation: 0.5 },
+  }
 
-  // Custom Konva filter: vignette (darken edges)
-  const vignetteAmountRef = useRef(0)
-  const vignetteFilter = useRef((imageData: ImageData) => {
-    const amount = vignetteAmountRef.current
-    if (amount === 0) return
+  // Combined realism filter — applies stacked techniques based on active preset
+  const realismPresetRef = useRef<null | "phone" | "dslr" | "film" | "disposable">(null)
+  const realismIntensityRef = useRef(0.5)
+  const realismFilter = useRef((imageData: ImageData) => {
+    const preset = realismPresetRef.current
+    if (!preset) return
+    const t = realismIntensityRef.current
+    if (t === 0) return
+    const cfg = REALISM_PRESETS[preset]
     const { width, height, data: d } = imageData
     const cx = width / 2, cy = height / 2
     const maxDist = Math.sqrt(cx * cx + cy * cy)
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const i = (y * width + x) * 4
-        const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) / maxDist
-        const factor = 1 - dist * dist * amount
-        d[i] = Math.max(0, d[i] * factor)
-        d[i + 1] = Math.max(0, d[i + 1] * factor)
-        d[i + 2] = Math.max(0, d[i + 2] * factor)
+
+    // For barrel/pincushion distortion we need a copy of original pixels
+    const distortionAmount = cfg.barrelDistortion * t
+    let srcCopy: Uint8ClampedArray | null = null
+    if (distortionAmount !== 0) {
+      srcCopy = new Uint8ClampedArray(d)
+    }
+
+    for (let py = 0; py < height; py++) {
+      for (let px = 0; px < width; px++) {
+        const i = (py * width + px) * 4
+
+        // 1. Barrel/pincushion distortion — sample from distorted source position
+        if (srcCopy && distortionAmount !== 0) {
+          const nx = (px - cx) / cx  // normalized -1 to 1
+          const ny = (py - cy) / cy
+          const r2 = nx * nx + ny * ny
+          const factor = 1 + distortionAmount * r2
+          const sx = Math.round(cx + nx * factor * cx)
+          const sy = Math.round(cy + ny * factor * cy)
+          if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
+            const si = (sy * width + sx) * 4
+            d[i] = srcCopy[si]
+            d[i + 1] = srcCopy[si + 1]
+            d[i + 2] = srcCopy[si + 2]
+          }
+        }
+
+        const r = d[i], g = d[i + 1], b = d[i + 2]
+        const luminance = (r * 0.299 + g * 0.587 + b * 0.114) / 255 // 0-1
+
+        // 2. Signal-dependent noise — more noise in shadows (read noise), less in highlights
+        const noiseAmount = cfg.noise * t
+        if (noiseAmount > 0) {
+          // Read noise (Gaussian, stronger in shadows) + shot noise (proportional to brightness)
+          const readNoise = (1 - luminance) * noiseAmount * 40
+          const shotNoise = Math.sqrt(luminance) * noiseAmount * 20
+          const totalNoise = readNoise + shotNoise
+          // Box-Muller for Gaussian-distributed noise (better than uniform Math.random)
+          const u1 = Math.random() || 0.0001
+          const u2 = Math.random()
+          const gaussian = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2)
+          const n = gaussian * totalNoise
+          d[i] = Math.min(255, Math.max(0, r + n))
+          d[i + 1] = Math.min(255, Math.max(0, g + n))
+          d[i + 2] = Math.min(255, Math.max(0, b + n + (Math.random() - 0.5) * noiseAmount * 8)) // slight blue channel variance
+        }
+
+        // 3. White balance / warm shift
+        const warmR = cfg.warmShift * t
+        if (warmR > 0) {
+          d[i] = Math.min(255, d[i] + warmR)
+          d[i + 1] = Math.min(255, d[i + 1] + warmR * 0.3)
+        }
+
+        // 4. Highlight clipping — push near-white values to pure white
+        const clipThreshold = 255 - cfg.highlightClip * t
+        if (d[i] > clipThreshold) d[i] = 255
+        if (d[i + 1] > clipThreshold) d[i + 1] = 255
+        if (d[i + 2] > clipThreshold) d[i + 2] = 255
+
+        // 5. Vignette — darken edges based on radial distance
+        const vigAmount = cfg.vignette * t
+        if (vigAmount > 0) {
+          const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2) / maxDist
+          const factor = 1 - dist * dist * vigAmount
+          d[i] = Math.max(0, d[i] * factor)
+          d[i + 1] = Math.max(0, d[i + 1] * factor)
+          d[i + 2] = Math.max(0, d[i + 2] * factor)
+        }
+
+        // 6. Lift blacks (matte look) — raise the floor so darkest values become dark gray, not black
+        const liftAmount = cfg.liftBlacks * t
+        if (liftAmount > 0) {
+          d[i] = Math.min(255, d[i] + (liftAmount * (1 - d[i] / 255)))
+          d[i + 1] = Math.min(255, d[i + 1] + (liftAmount * (1 - d[i + 1] / 255)))
+          d[i + 2] = Math.min(255, d[i + 2] + (liftAmount * (1 - d[i + 2] / 255)))
+        }
+
+        // 7. Desaturate — pull colors toward gray, removing the "advertisement" vibrancy
+        const desat = cfg.desaturate * t
+        if (desat > 0) {
+          const gray = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114
+          d[i] = d[i] + (gray - d[i]) * desat
+          d[i + 1] = d[i + 1] + (gray - d[i + 1]) * desat
+          d[i + 2] = d[i + 2] + (gray - d[i + 2]) * desat
+        }
+
+        // 8. Halation — bright pixels bleed warm glow into surroundings (applied as per-pixel approximation)
+        const halAmount = cfg.halation * t
+        if (halAmount > 0 && d[i] > 200) {
+          // Bright pixels get a warm bloom — push red up, green slightly, blue stays
+          const bloom = ((d[i] - 200) / 55) * halAmount
+          d[i] = Math.min(255, d[i] + bloom * 15)
+          d[i + 1] = Math.min(255, d[i + 1] + bloom * 5)
+          // blue unchanged — halation is warm
+        }
       }
     }
   }).current
 
-  // Custom Konva filter: chromatic aberration (RGB channel offset)
-  const chromAbAmountRef = useRef(0)
-  const chromaticAberrationFilter = useRef((imageData: ImageData) => {
-    const amount = chromAbAmountRef.current
-    if (amount === 0) return
-    const { width, height, data: d } = imageData
-    const offset = Math.round(amount * 6)
-    const copy = new Uint8ClampedArray(d)
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const i = (y * width + x) * 4
-        // Shift red channel left, blue channel right
-        const rSrc = (y * width + Math.min(width - 1, x + offset)) * 4
-        const bSrc = (y * width + Math.max(0, x - offset)) * 4
-        d[i] = copy[rSrc]         // red from shifted position
-        d[i + 2] = copy[bSrc + 2] // blue from shifted position
-        // green stays in place
-      }
-    }
-  }).current
-
-  // Custom Konva filter: color cast (warm/cool shift)
-  const colorCastAmountRef = useRef(0)
-  const colorCastFilter = useRef((imageData: ImageData) => {
-    const amount = colorCastAmountRef.current
-    if (amount === 0) return
-    const d = imageData.data
-    const warmR = amount > 0 ? amount * 25 : 0
-    const warmG = amount > 0 ? amount * 10 : 0
-    const coolB = amount < 0 ? -amount * 25 : 0
-    const coolG = amount < 0 ? -amount * 5 : 0
-    for (let i = 0; i < d.length; i += 4) {
-      d[i] = Math.min(255, d[i] + warmR)
-      d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + warmG - coolG))
-      d[i + 2] = Math.min(255, d[i + 2] + coolB)
-    }
-  }).current
-
-  // Sync filter refs with state
+  // Sync realism refs with state
   useEffect(() => {
-    grainAmountRef.current = filters.grain
-    vignetteAmountRef.current = filters.vignette
-    chromAbAmountRef.current = filters.chromaticAberration
-    colorCastAmountRef.current = filters.colorCast
-  }, [filters.grain, filters.vignette, filters.chromaticAberration, filters.colorCast])
+    realismPresetRef.current = filters.realismPreset
+    realismIntensityRef.current = filters.realismIntensity
+  }, [filters.realismPreset, filters.realismIntensity])
 
   // Apply filters to background image
   useEffect(() => {
@@ -451,11 +497,8 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     if (filters.grayscale) activeFilters.push(K.Filters.Grayscale)
     if (filters.saturation !== 0) activeFilters.push(K.Filters.HSL)
     if (filters.sepia) activeFilters.push(K.Filters.Sepia)
-    // Custom realism filters
-    if (filters.grain > 0) activeFilters.push(grainFilter as unknown as typeof K.Filters.Brighten)
-    if (filters.vignette > 0) activeFilters.push(vignetteFilter as unknown as typeof K.Filters.Brighten)
-    if (filters.chromaticAberration > 0) activeFilters.push(chromaticAberrationFilter as unknown as typeof K.Filters.Brighten)
-    if (filters.colorCast !== 0) activeFilters.push(colorCastFilter as unknown as typeof K.Filters.Brighten)
+    // Realism preset filter
+    if (filters.realismPreset) activeFilters.push(realismFilter as unknown as typeof K.Filters.Brighten)
 
     if (activeFilters.length > 0) {
       node.filters(activeFilters)
@@ -471,7 +514,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
       node.clearCache()
     }
     node.getLayer()?.batchDraw()
-  }, [filters, image, grainFilter, vignetteFilter, chromaticAberrationFilter, colorCastFilter])
+  }, [filters, image, realismFilter])
 
   function addTextBlock() {
     const id = nextId("text")
@@ -608,13 +651,50 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
       bgImageRef.current.cache()
     }
     stageRef.current.draw()
-    const dataUrl = stageRef.current.toDataURL({
-      pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
-      mimeType: "image/png",
-    })
-    setSelectedId(null)
-    onExport(dataUrl, blocks)
-  }, [onExport, blocks])
+
+    // If a realism preset is active, export via JPEG re-encode cycle to strip AI spectral fingerprints
+    if (filters.realismPreset) {
+      const pngUrl = stageRef.current.toDataURL({
+        pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
+        mimeType: "image/png",
+      })
+      // JPEG re-encode: render to JPEG at quality 88, then re-read as the final output
+      // This destroys subtle diffusion model artifacts in the frequency domain
+      const fallbackExport = () => {
+        setSelectedId(null)
+        onExport(pngUrl, blocks)
+      }
+      const tempImg = new window.Image()
+      tempImg.onerror = fallbackExport
+      tempImg.onload = () => {
+        const c = document.createElement("canvas")
+        c.width = CANVAS_SIZE; c.height = CANVAS_SIZE
+        const ctx = c.getContext("2d")
+        if (!ctx) { fallbackExport(); return }
+        ctx.drawImage(tempImg, 0, 0, CANVAS_SIZE, CANVAS_SIZE)
+        // First JPEG pass
+        const jpeg1 = c.toDataURL("image/jpeg", 0.88)
+        const tempImg2 = new window.Image()
+        tempImg2.onerror = fallbackExport
+        tempImg2.onload = () => {
+          ctx.drawImage(tempImg2, 0, 0, CANVAS_SIZE, CANVAS_SIZE)
+          // Second pass back to PNG for clean output (artifacts are now baked in)
+          const finalUrl = c.toDataURL("image/png")
+          setSelectedId(null)
+          onExport(finalUrl, blocks)
+        }
+        tempImg2.src = jpeg1
+      }
+      tempImg.src = pngUrl
+    } else {
+      const dataUrl = stageRef.current.toDataURL({
+        pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
+        mimeType: "image/png",
+      })
+      setSelectedId(null)
+      onExport(dataUrl, blocks)
+    }
+  }, [onExport, blocks, filters.realismPreset])
 
   useImperativeHandle(ref, () => ({
     triggerExport: handleExport,
@@ -1237,48 +1317,49 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
             </label>
           </div>
           <div className="border-t border-neutral-200 pt-2 mt-2">
-            <span className="text-xs font-medium text-neutral-700">Realism</span>
+            <span className="text-xs font-medium text-neutral-700">De-AI Presets</span>
+            <p className="text-[10px] text-neutral-400 mt-0.5">Simulates real camera characteristics</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-neutral-500 w-16">Grain</span>
-            <input
-              type="range" min={0} max={1} step={0.05}
-              value={filters.grain}
-              onChange={(e) => setFilters((f) => ({ ...f, grain: Number(e.target.value) }))}
-              className="flex-1"
-            />
-            <span className="text-xs text-neutral-500 w-8 text-right">{Math.round(filters.grain * 100)}%</span>
+          <div className="flex gap-1.5 flex-wrap">
+            {([
+              { id: "phone" as const, label: "Phone Snap" },
+              { id: "dslr" as const, label: "DSLR" },
+              { id: "film" as const, label: "Film" },
+              { id: "disposable" as const, label: "Disposable" },
+            ]).map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setFilters((f) => ({ ...f, realismPreset: f.realismPreset === p.id ? null : p.id }))}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  filters.realismPreset === p.id
+                    ? "bg-neutral-900 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-neutral-500 w-16">Vignette</span>
-            <input
-              type="range" min={0} max={2} step={0.1}
-              value={filters.vignette}
-              onChange={(e) => setFilters((f) => ({ ...f, vignette: Number(e.target.value) }))}
-              className="flex-1"
-            />
-            <span className="text-xs text-neutral-500 w-8 text-right">{filters.vignette.toFixed(1)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-neutral-500 w-16">Chrom. Ab.</span>
-            <input
-              type="range" min={0} max={1} step={0.05}
-              value={filters.chromaticAberration}
-              onChange={(e) => setFilters((f) => ({ ...f, chromaticAberration: Number(e.target.value) }))}
-              className="flex-1"
-            />
-            <span className="text-xs text-neutral-500 w-8 text-right">{Math.round(filters.chromaticAberration * 100)}%</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-neutral-500 w-16">Color Cast</span>
-            <input
-              type="range" min={-1} max={1} step={0.05}
-              value={filters.colorCast}
-              onChange={(e) => setFilters((f) => ({ ...f, colorCast: Number(e.target.value) }))}
-              className="flex-1"
-            />
-            <span className="text-xs text-neutral-500 w-8 text-right">{filters.colorCast > 0 ? "warm" : filters.colorCast < 0 ? "cool" : "—"}</span>
-          </div>
+          {filters.realismPreset && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-neutral-500 w-16">Intensity</span>
+              <input
+                type="range" min={0.1} max={1} step={0.05}
+                value={filters.realismIntensity}
+                onChange={(e) => {
+                  const val = Number(e.target.value)
+                  // Update display value immediately but debounce the expensive filter recomputation
+                  if (realismDebounceRef.current) clearTimeout(realismDebounceRef.current)
+                  realismIntensityRef.current = val
+                  realismDebounceRef.current = setTimeout(() => {
+                    setFilters((f) => ({ ...f, realismIntensity: val }))
+                  }, 150)
+                }}
+                className="flex-1"
+              />
+              <span className="text-xs text-neutral-500 w-8 text-right">{Math.round(filters.realismIntensity * 100)}%</span>
+            </div>
+          )}
         </div>
       )}
 
