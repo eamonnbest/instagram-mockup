@@ -1,5 +1,80 @@
 # Build Log
 
+## Session: 2026-03-09
+
+### Completed (committed, pushed)
+
+**Commit `475f64e` — Add post workflow: status system, filter bar, chat UI, approve/reject**
+
+**Post status system:**
+- Added `status` column to `instagram_posts` table (draft/approved/rejected, default draft)
+- Added `status` to TypeScript interface, POST (defaults to draft), and PATCH handlers
+- Filter bar above grid: All/Drafts/Approved/Rejected pills with counts
+- Grid, phone-frame preview, and SortableContext all use `filteredPosts`
+- Fixed drag-and-drop to reorder within filtered subset and splice back into full array
+
+**Chat UI (replaced Notes):**
+- iMessage-style bubbles: E left-aligned (light gray), H right-aligned (dark)
+- Inline message editing: pencil icon on hover for own messages, Enter to save, Escape to cancel
+- Delete on hover (X icon), only for own messages
+- Collapsed state shows last message as a bubble preview with count badge
+- Fixed stale edit state on post switch, fixed index shift on delete-while-editing
+- Renamed "Notes" → "Chat" throughout
+
+**Approve/reject buttons:**
+- Status badge in post modal (amber draft, green approved, red rejected)
+- Context-aware buttons: only shows actions that make sense for current status
+- `updatePostStatus` checks `response.ok` before updating local state
+
+**Commit `5850d0d` — Replace cosmetic realism sliders with research-backed De-AI presets**
+
+**Replaced 4 cargo-cult filters with research-backed system:**
+- Old: uniform grain, vignette, chromatic aberration, color cast (cosmetic only, zero effect on AI detection)
+- New: 4 presets (Phone Snap, DSLR, Film, Disposable) each stacking 8 techniques:
+  1. Signal-dependent noise (Box-Muller Gaussian, shadow-heavy like real sensors)
+  2. Barrel/pincushion lens distortion (radial polynomial)
+  3. White balance warm shift
+  4. Highlight clipping (blown whites)
+  5. Vignette (lens light falloff)
+  6. Lifted blacks (matte/faded look, removes HDR feel)
+  7. Partial desaturation (removes advertisement vibrancy)
+  8. Halation (warm highlight bloom on film/disposable)
+- JPEG re-encode on export (quality 0.88) to destroy AI spectral fingerprints
+- Single intensity slider per preset, debounced at 150ms
+- Error handling on JPEG export with PNG fallback
+
+### Design Decisions & Learnings
+- **Status filter is just a filter, not a separate feed** — simplest approach that solves the workflow need
+- **Drag-and-drop with filters requires careful index mapping** — reorder within filtered subset, splice back into full array at original positions
+- **Old "realism" filters were cargo cult** — research showed vignette/color cast have zero effect on AI detection. Real tells are noise uniformity, spectral fingerprints, and PRNU
+- **The "de-AI" problem is making images worse, not better** — fal.ai's post-processing API makes images more polished, which is the opposite of what's needed
+- **What makes stock/AI images look fake:** over-smoothness, perfect symmetry, HDR "everything visible" look, oversaturated colors, uniform noise. Fix = lifted blacks, desaturation, signal-dependent noise, highlight clipping
+- **Zoom feature attempted and removed** — resizing Konva Stage breaks inline editing, exports, and transformers. CSS scale approach caused scroll trapping on mobile. Not worth the complexity.
+
+### What's NOT Done
+- Softness/blur as a De-AI technique (requires convolution, can't be done per-pixel — use existing Background Filters blur instead)
+- True halation (spatial blur of bright pixel mask) — current implementation is per-pixel approximation
+- FFT spectrum perturbation (most powerful anti-detection technique but too complex/slow for canvas JS)
+- fal.ai relighting integration (useful for fixing AI's inconsistent lighting — $0.04/image, already have SDK)
+- Chat UI is duplicated in mobile and desktop sections (~90 lines each) — could be extracted to a component
+
+### Key Files (updated)
+- `components/text-overlay-editor.tsx` — Canvas editor with De-AI presets, JPEG re-encode export
+- `app/page.tsx` — Profile grid with status filter, chat UI, approve/reject workflow
+- `app/api/instagram/posts/route.ts` — CRUD with status field support
+
+### Git
+- `475f64e` — Post workflow (status, filter, chat, approve/reject)
+- `5850d0d` — De-AI presets replacing cosmetic realism sliders
+
+### Next Steps (if continuing)
+- Test De-AI presets in browser — compare Phone Snap vs Film vs Disposable at different intensities
+- Consider fal.ai relighting as a separate "Fix Lighting" button ($0.04/image)
+- Consider extracting chat UI into a shared component to reduce duplication
+- Consider adding preset thumbnails/previews so user can see the effect before applying
+
+---
+
 ## Session: 2026-03-08
 
 ### Completed (tested, committed, pushed)
