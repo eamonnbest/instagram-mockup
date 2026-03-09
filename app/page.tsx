@@ -17,7 +17,7 @@ import {
   GripVertical,
   Eye,
   EyeOff,
-  StickyNote,
+  MessageSquare,
   X,
   ChevronDown,
   Copy,
@@ -28,6 +28,9 @@ import {
   ClipboardCopy,
   Pencil,
   Megaphone,
+  Check,
+  XCircle,
+  RotateCcw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -63,6 +66,7 @@ interface InstagramPost {
   tags: string[]
   carousel_images: string[]
   scheduled_for: string | null
+  status: "draft" | "approved" | "rejected"
 }
 
 interface NoteEntry {
@@ -268,6 +272,8 @@ export default function InstagramPage() {
   const [noteEntries, setNoteEntries] = useState<NoteEntry[]>([])
   const [newNote, setNewNote] = useState("")
   const [notesOpen, setNotesOpen] = useState(false)
+  const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null)
+  const [editingNoteText, setEditingNoteText] = useState("")
   const [noteAuthor, setNoteAuthor] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("note-author") || "E"
     return "E"
@@ -276,6 +282,11 @@ export default function InstagramPage() {
   const [showPalette, setShowPalette] = useState(false)
   const [copiedCaption, setCopiedCaption] = useState(false)
   const [postColors, setPostColors] = useState<Record<string, string[]>>({})
+  const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "approved" | "rejected">("all")
+  const filteredPosts = useMemo(() => {
+    if (statusFilter === "all") return posts
+    return posts.filter((p) => p.status === statusFilter)
+  }, [posts, statusFilter])
 
   useEffect(() => {
     loadData()
@@ -371,6 +382,21 @@ export default function InstagramPage() {
     }
   }
 
+  async function updatePostStatus(id: string, status: "draft" | "approved" | "rejected") {
+    try {
+      const res = await fetch("/api/instagram/posts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      })
+      if (!res.ok) throw new Error("Server returned " + res.status)
+      setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)))
+      if (selectedPost?.id === id) setSelectedPost({ ...selectedPost, status })
+    } catch (error) {
+      console.error("Failed to update status:", error)
+    }
+  }
+
   function startEditing(field: string, currentValue: string) {
     setEditingField(field)
     setEditValue(currentValue)
@@ -382,6 +408,8 @@ export default function InstagramPage() {
     setNoteEntries(parseNotes(post.notes))
     setNewNote("")
     setNotesOpen(false)
+    setEditingNoteIndex(null)
+    setEditingNoteText("")
     setModalCarouselIndex(0)
     setIsEditing(false)
   }
@@ -414,6 +442,11 @@ export default function InstagramPage() {
 
   async function deleteNote(index: number) {
     if (!selectedPost) return
+    // Adjust editing index if deleting a message before or at the one being edited
+    if (editingNoteIndex !== null) {
+      if (index === editingNoteIndex) { setEditingNoteIndex(null); setEditingNoteText("") }
+      else if (index < editingNoteIndex) setEditingNoteIndex(editingNoteIndex - 1)
+    }
     const updated = noteEntries.filter((_, i) => i !== index)
     setNoteEntries(updated)
     const serialized = serializeNotes(updated)
@@ -428,6 +461,29 @@ export default function InstagramPage() {
       setSelectedPost(updatedPost)
     } catch (error) {
       console.error("Failed to delete note:", error)
+    }
+  }
+
+  async function saveEditedNote() {
+    if (!selectedPost || editingNoteIndex === null || !editingNoteText.trim()) return
+    const updated = noteEntries.map((entry, i) =>
+      i === editingNoteIndex ? { ...entry, text: editingNoteText.trim() } : entry
+    )
+    setNoteEntries(updated)
+    setEditingNoteIndex(null)
+    setEditingNoteText("")
+    const serialized = serializeNotes(updated)
+    try {
+      await fetch("/api/instagram/posts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedPost.id, notes: serialized }),
+      })
+      const updatedPost = { ...selectedPost, notes: serialized }
+      setPosts((prev) => prev.map((p) => (p.id === selectedPost.id ? updatedPost : p)))
+      setSelectedPost(updatedPost)
+    } catch (error) {
+      console.error("Failed to edit note:", error)
     }
   }
 
@@ -481,9 +537,22 @@ export default function InstagramPage() {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const oldIndex = posts.findIndex((p) => p.id === active.id)
-    const newIndex = posts.findIndex((p) => p.id === over.id)
-    const reordered = arrayMove(posts, oldIndex, newIndex)
+    // Reorder within the filtered subset, then splice back into full posts array
+    const oldFilteredIndex = filteredPosts.findIndex((p) => p.id === active.id)
+    const newFilteredIndex = filteredPosts.findIndex((p) => p.id === over.id)
+    const reorderedFiltered = arrayMove(filteredPosts, oldFilteredIndex, newFilteredIndex)
+
+    // Rebuild full posts array: replace filtered posts in their original positions
+    const filteredIds = new Set(filteredPosts.map((p) => p.id))
+    const reordered: InstagramPost[] = []
+    let filteredIdx = 0
+    for (const post of posts) {
+      if (filteredIds.has(post.id)) {
+        reordered.push(reorderedFiltered[filteredIdx++])
+      } else {
+        reordered.push(post)
+      }
+    }
     setPosts(reordered)
 
     // Save new order to Supabase
@@ -746,6 +815,28 @@ export default function InstagramPage() {
           </div>
         )}
 
+        {/* Status filter */}
+        {!loading && posts.length > 0 && (
+          <div className="flex gap-1 px-4 py-2">
+            {(["all", "draft", "approved", "rejected"] as const).map((s) => {
+              const count = s === "all" ? posts.length : posts.filter((p) => p.status === s).length
+              return (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    statusFilter === s
+                      ? "bg-neutral-900 text-white"
+                      : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+                  }`}
+                >
+                  {s.charAt(0).toUpperCase() + s.slice(1)} {count > 0 && <span className="ml-1 opacity-60">{count}</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* Grid */}
         {loading ? (
           <div className="grid grid-cols-3 gap-1">
@@ -759,6 +850,10 @@ export default function InstagramPage() {
             <Link href="/new">
               <Button>Create First Post</Button>
             </Link>
+          </div>
+        ) : filteredPosts.length === 0 ? (
+          <div className="py-12 text-center">
+            <p className="text-sm text-neutral-400">No {statusFilter} posts</p>
           </div>
         ) : gridPreview ? (
           /* Phone-frame grid preview */
@@ -783,11 +878,11 @@ export default function InstagramPage() {
               </div>
               {/* Mini grid — pad to complete the last row */}
               {(() => {
-                const cellCount = Math.ceil(posts.length / 3) * 3
+                const cellCount = Math.ceil(filteredPosts.length / 3) * 3
                 return (
                   <div className="grid grid-cols-3 gap-px bg-neutral-100">
                     {Array.from({ length: Math.max(cellCount, 15) }).map((_, i) => {
-                      const post = posts[i]
+                      const post = filteredPosts[i]
                       return (
                         <div key={post?.id ?? `empty-${i}`} className="aspect-square relative bg-white">
                           {post?.image_url && (
@@ -807,9 +902,9 @@ export default function InstagramPage() {
           </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={posts.map((p) => p.id)} strategy={rectSortingStrategy}>
+            <SortableContext items={filteredPosts.map((p) => p.id)} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-3 gap-1">
-                {posts.map((post) => (
+                {filteredPosts.map((post) => (
                   <SortablePost key={post.id} post={post} isReordering={isReordering} onOpen={openPost} colors={showPalette ? postColors[post.id] : undefined} />
                 ))}
               </div>
@@ -983,58 +1078,121 @@ export default function InstagramPage() {
                   )}
                 </div>
 
-                {/* Notes */}
+                {/* Chat */}
                 <div className="px-3 py-2 border-t border-neutral-100">
                   <button onClick={() => setNotesOpen(!notesOpen)} className="flex items-center gap-1.5 w-full">
-                    <StickyNote className="w-3 h-3 text-neutral-400" />
-                    <span className="text-xs font-medium text-neutral-500">Notes</span>
-                    {noteEntries.length > 1 && !notesOpen && <span className="text-[10px] text-neutral-400">+{noteEntries.length - 1} more</span>}
+                    <MessageSquare className="w-3 h-3 text-neutral-400" />
+                    <span className="text-xs font-medium text-neutral-500">Chat</span>
+                    {noteEntries.length > 0 && <span className="text-[10px] text-neutral-400 ml-0.5">{noteEntries.length}</span>}
                     <ChevronDown className={`w-3 h-3 text-neutral-400 ml-auto transition-transform ${notesOpen ? "rotate-180" : ""}`} />
                   </button>
-                  {/* Latest note always visible */}
-                  {!notesOpen && noteEntries.length > 0 && (
-                    <div className="mt-2 flex gap-2 items-start">
-                      <span className="w-5 h-5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-500 flex items-center justify-center shrink-0 mt-0.5">{noteEntries[noteEntries.length - 1].author}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-zinc-700 line-clamp-2">{noteEntries[noteEntries.length - 1].text}</p>
-                        <span className="text-[10px] text-zinc-400">{timeAgo(noteEntries[noteEntries.length - 1].timestamp)}</span>
+                  {/* Latest message preview when collapsed */}
+                  {!notesOpen && noteEntries.length > 0 && (() => {
+                    const last = noteEntries[noteEntries.length - 1]
+                    const isE = last.author === "E"
+                    return (
+                      <div className={`mt-2 flex items-start gap-2 ${isE ? "" : "flex-row-reverse"}`}>
+                        <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${isE ? "bg-zinc-200 text-zinc-600" : "bg-zinc-800 text-white"}`}>{last.author}</span>
+                        <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 ${isE ? "bg-zinc-100 rounded-tl-sm" : "bg-zinc-800 text-white rounded-tr-sm"}`}>
+                          <p className="text-xs line-clamp-2">{last.text}</p>
+                          <span className={`text-[10px] text-zinc-400`}>{timeAgo(last.timestamp)}</span>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
                   {notesOpen && (
                     <div className="mt-2 space-y-2">
+                      {/* Author toggle */}
                       <div className="flex items-center gap-1 text-[10px] text-neutral-400">
-                        <span>Posting as</span>
+                        <span>Chatting as</span>
                         {["E", "H"].map((a) => (
                           <button
                             key={a}
                             onClick={() => changeNoteAuthor(a)}
-                            className={`w-5 h-5 rounded-full text-[10px] font-bold ${noteAuthor === a ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}
+                            className={`w-5 h-5 rounded-full text-[10px] font-bold transition-colors ${noteAuthor === a ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}
                           >
                             {a}
                           </button>
                         ))}
                       </div>
-                      <div className="max-h-[200px] overflow-y-auto space-y-1.5">
-                        {noteEntries.map((entry, i) => (
-                          <div key={i} className="group flex gap-2 items-start">
-                            <span className="w-5 h-5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-500 flex items-center justify-center shrink-0 mt-0.5">{entry.author}</span>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs text-zinc-700">{entry.text}</p>
-                              <span className="text-[10px] text-zinc-400">{timeAgo(entry.timestamp)}</span>
+                      {/* Messages */}
+                      <div className="max-h-[250px] overflow-y-auto space-y-1.5 py-1">
+                        {noteEntries.map((entry, i) => {
+                          const isE = entry.author === "E"
+                          const isOwn = entry.author === noteAuthor
+                          return (
+                            <div key={i} className={`group flex items-end gap-1.5 ${isE ? "" : "flex-row-reverse"}`}>
+                              <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${isE ? "bg-zinc-200 text-zinc-600" : "bg-zinc-800 text-white"}`}>{entry.author}</span>
+                              <div className={`max-w-[75%] rounded-2xl px-3 py-1.5 ${isE ? "bg-zinc-100 rounded-bl-sm" : "bg-zinc-800 text-white rounded-br-sm"}`}>
+                                {editingNoteIndex === i ? (
+                                  <div className="space-y-1">
+                                    <Input
+                                      value={editingNoteText}
+                                      onChange={(e) => setEditingNoteText(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === "Enter") saveEditedNote(); if (e.key === "Escape") { setEditingNoteIndex(null); setEditingNoteText("") } }}
+                                      className="h-6 text-xs bg-white/90 border-0"
+                                      autoFocus
+                                    />
+                                    <div className="flex gap-1">
+                                      <button onClick={saveEditedNote} className="text-[10px] font-medium text-blue-500 hover:text-blue-600">Save</button>
+                                      <button onClick={() => { setEditingNoteIndex(null); setEditingNoteText("") }} className="text-[10px] text-zinc-400 hover:text-zinc-500">Cancel</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <p className="text-xs">{entry.text}</p>
+                                    <span className={`text-[10px] text-zinc-400`}>{timeAgo(entry.timestamp)}</span>
+                                  </>
+                                )}
+                              </div>
+                              {/* Actions — only on own messages, not while editing */}
+                              {isOwn && editingNoteIndex !== i && (
+                                <div className={`opacity-0 group-hover:opacity-100 flex gap-0.5 ${isE ? "" : "flex-row-reverse"}`}>
+                                  <button onClick={() => { setEditingNoteIndex(i); setEditingNoteText(entry.text) }} className="p-0.5 hover:bg-zinc-100 rounded">
+                                    <Pencil className="w-2.5 h-2.5 text-zinc-400" />
+                                  </button>
+                                  <button onClick={() => deleteNote(i)} className="p-0.5 hover:bg-red-50 rounded">
+                                    <X className="w-2.5 h-2.5 text-red-400" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                            <button onClick={() => deleteNote(i)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-50 rounded">
-                              <X className="w-3 h-3 text-red-400" />
-                            </button>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
+                      {/* Input */}
                       <div className="flex gap-1.5">
-                        <Input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Add a note..." className="h-7 text-xs flex-1" />
-                        <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addNote} disabled={!newNote.trim()}>Add</Button>
+                        <Input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Type a message..." className="h-7 text-xs flex-1" />
+                        <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addNote} disabled={!newNote.trim()}>Send</Button>
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* Status & Approve/Reject */}
+                <div className="px-3 py-2 border-t border-neutral-100 flex items-center gap-2">
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    selectedPost.status === "approved" ? "bg-emerald-100 text-emerald-700" :
+                    selectedPost.status === "rejected" ? "bg-red-100 text-red-600" :
+                    "bg-amber-100 text-amber-700"
+                  }`}>{selectedPost.status}</span>
+                  <div className="ml-auto flex gap-1.5">
+                    {selectedPost.status !== "approved" && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => updatePostStatus(selectedPost.id, "approved")}>
+                        <Check className="w-3.5 h-3.5 mr-1" />Approve
+                      </Button>
+                    )}
+                    {selectedPost.status !== "rejected" && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs text-red-500 hover:bg-red-50 hover:text-red-600" onClick={() => updatePostStatus(selectedPost.id, "rejected")}>
+                        <XCircle className="w-3.5 h-3.5 mr-1" />Reject
+                      </Button>
+                    )}
+                    {selectedPost.status !== "draft" && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updatePostStatus(selectedPost.id, "draft")}>
+                        <RotateCcw className="w-3.5 h-3.5 mr-1" />Draft
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Edit/Delete controls */}
@@ -1156,55 +1314,92 @@ export default function InstagramPage() {
                   </div>
                 </div>
 
-                {/* Notes */}
+                {/* Chat */}
                 <div className="border-t border-neutral-200 p-3">
                   <button onClick={() => setNotesOpen(!notesOpen)} className="flex items-center gap-1.5 w-full">
-                    <StickyNote className="w-3 h-3 text-neutral-400" />
-                    <span className="text-xs font-medium text-neutral-500">Notes</span>
-                    {noteEntries.length > 1 && !notesOpen && <span className="text-[10px] text-neutral-400">+{noteEntries.length - 1} more</span>}
+                    <MessageSquare className="w-3 h-3 text-neutral-400" />
+                    <span className="text-xs font-medium text-neutral-500">Chat</span>
+                    {noteEntries.length > 0 && <span className="text-[10px] text-neutral-400 ml-0.5">{noteEntries.length}</span>}
                     <ChevronDown className={`w-3 h-3 text-neutral-400 ml-auto transition-transform ${notesOpen ? "rotate-180" : ""}`} />
                   </button>
-                  {/* Latest note always visible */}
-                  {!notesOpen && noteEntries.length > 0 && (
-                    <div className="mt-2 flex gap-2 items-start">
-                      <span className="w-5 h-5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-500 flex items-center justify-center shrink-0 mt-0.5">{noteEntries[noteEntries.length - 1].author}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-zinc-700 line-clamp-2">{noteEntries[noteEntries.length - 1].text}</p>
-                        <span className="text-[10px] text-zinc-400">{timeAgo(noteEntries[noteEntries.length - 1].timestamp)}</span>
+                  {/* Latest message preview when collapsed */}
+                  {!notesOpen && noteEntries.length > 0 && (() => {
+                    const last = noteEntries[noteEntries.length - 1]
+                    const isE = last.author === "E"
+                    return (
+                      <div className={`mt-2 flex items-start gap-2 ${isE ? "" : "flex-row-reverse"}`}>
+                        <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${isE ? "bg-zinc-200 text-zinc-600" : "bg-zinc-800 text-white"}`}>{last.author}</span>
+                        <div className={`max-w-[80%] rounded-2xl px-3 py-1.5 ${isE ? "bg-zinc-100 rounded-tl-sm" : "bg-zinc-800 text-white rounded-tr-sm"}`}>
+                          <p className="text-xs line-clamp-2">{last.text}</p>
+                          <span className={`text-[10px] text-zinc-400`}>{timeAgo(last.timestamp)}</span>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
                   {notesOpen && (
                     <div className="mt-2 space-y-2">
+                      {/* Author toggle */}
                       <div className="flex items-center gap-1 text-[10px] text-neutral-400">
-                        <span>Posting as</span>
+                        <span>Chatting as</span>
                         {["E", "H"].map((a) => (
                           <button
                             key={a}
                             onClick={() => changeNoteAuthor(a)}
-                            className={`w-5 h-5 rounded-full text-[10px] font-bold ${noteAuthor === a ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}
+                            className={`w-5 h-5 rounded-full text-[10px] font-bold transition-colors ${noteAuthor === a ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}
                           >
                             {a}
                           </button>
                         ))}
                       </div>
-                      <div className="max-h-[200px] overflow-y-auto space-y-1.5">
-                        {noteEntries.map((entry, i) => (
-                          <div key={i} className="group flex gap-2 items-start">
-                            <span className="w-5 h-5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-500 flex items-center justify-center shrink-0 mt-0.5">{entry.author}</span>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs text-zinc-700">{entry.text}</p>
-                              <span className="text-[10px] text-zinc-400">{timeAgo(entry.timestamp)}</span>
+                      {/* Messages */}
+                      <div className="max-h-[250px] overflow-y-auto space-y-1.5 py-1">
+                        {noteEntries.map((entry, i) => {
+                          const isE = entry.author === "E"
+                          const isOwn = entry.author === noteAuthor
+                          return (
+                            <div key={i} className={`group flex items-end gap-1.5 ${isE ? "" : "flex-row-reverse"}`}>
+                              <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${isE ? "bg-zinc-200 text-zinc-600" : "bg-zinc-800 text-white"}`}>{entry.author}</span>
+                              <div className={`max-w-[75%] rounded-2xl px-3 py-1.5 ${isE ? "bg-zinc-100 rounded-bl-sm" : "bg-zinc-800 text-white rounded-br-sm"}`}>
+                                {editingNoteIndex === i ? (
+                                  <div className="space-y-1">
+                                    <Input
+                                      value={editingNoteText}
+                                      onChange={(e) => setEditingNoteText(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === "Enter") saveEditedNote(); if (e.key === "Escape") { setEditingNoteIndex(null); setEditingNoteText("") } }}
+                                      className="h-6 text-xs bg-white/90 border-0"
+                                      autoFocus
+                                    />
+                                    <div className="flex gap-1">
+                                      <button onClick={saveEditedNote} className="text-[10px] font-medium text-blue-500 hover:text-blue-600">Save</button>
+                                      <button onClick={() => { setEditingNoteIndex(null); setEditingNoteText("") }} className="text-[10px] text-zinc-400 hover:text-zinc-500">Cancel</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <p className="text-xs">{entry.text}</p>
+                                    <span className={`text-[10px] text-zinc-400`}>{timeAgo(entry.timestamp)}</span>
+                                  </>
+                                )}
+                              </div>
+                              {/* Actions — only on own messages, not while editing */}
+                              {isOwn && editingNoteIndex !== i && (
+                                <div className={`opacity-0 group-hover:opacity-100 flex gap-0.5 ${isE ? "" : "flex-row-reverse"}`}>
+                                  <button onClick={() => { setEditingNoteIndex(i); setEditingNoteText(entry.text) }} className="p-0.5 hover:bg-zinc-100 rounded">
+                                    <Pencil className="w-2.5 h-2.5 text-zinc-400" />
+                                  </button>
+                                  <button onClick={() => deleteNote(i)} className="p-0.5 hover:bg-red-50 rounded">
+                                    <X className="w-2.5 h-2.5 text-red-400" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                            <button onClick={() => deleteNote(i)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-50 rounded">
-                              <X className="w-3 h-3 text-red-400" />
-                            </button>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
+                      {/* Input */}
                       <div className="flex gap-1.5">
-                        <Input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Add a note..." className="h-7 text-xs flex-1" />
-                        <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addNote} disabled={!newNote.trim()}>Add</Button>
+                        <Input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Type a message..." className="h-7 text-xs flex-1" />
+                        <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={addNote} disabled={!newNote.trim()}>Send</Button>
                       </div>
                     </div>
                   )}
@@ -1261,6 +1456,32 @@ export default function InstagramPage() {
                 <div className="border-t border-neutral-200 p-3 flex items-center gap-3">
                   <input type="text" placeholder="Add a comment..." className="flex-1 text-sm outline-none" disabled />
                   <span className="text-sm font-semibold text-blue-500/50">Post</span>
+                </div>
+
+                {/* Status & Approve/Reject */}
+                <div className="border-t border-neutral-200 p-3 flex items-center gap-2">
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    selectedPost.status === "approved" ? "bg-emerald-100 text-emerald-700" :
+                    selectedPost.status === "rejected" ? "bg-red-100 text-red-600" :
+                    "bg-amber-100 text-amber-700"
+                  }`}>{selectedPost.status}</span>
+                  <div className="ml-auto flex gap-1.5">
+                    {selectedPost.status !== "approved" && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" onClick={() => updatePostStatus(selectedPost.id, "approved")}>
+                        <Check className="w-3.5 h-3.5 mr-1" />Approve
+                      </Button>
+                    )}
+                    {selectedPost.status !== "rejected" && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs text-red-500 hover:bg-red-50 hover:text-red-600" onClick={() => updatePostStatus(selectedPost.id, "rejected")}>
+                        <XCircle className="w-3.5 h-3.5 mr-1" />Reject
+                      </Button>
+                    )}
+                    {selectedPost.status !== "draft" && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updatePostStatus(selectedPost.id, "draft")}>
+                        <RotateCcw className="w-3.5 h-3.5 mr-1" />Draft
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Edit/Delete controls */}

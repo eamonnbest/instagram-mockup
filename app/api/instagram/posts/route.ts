@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { image_url, caption, likes_count = 0, comments_count = 0, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url } = body
+  const { image_url, caption, likes_count = 0, comments_count = 0, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status = "draft" } = body
 
   const { data: maxOrder } = await getSupabase()
     .from("instagram_posts")
@@ -59,6 +59,7 @@ export async function POST(request: Request) {
       scheduled_for: scheduled_for || null,
       overlay_blocks: overlay_blocks || [],
       original_image_url: original_image_url || null,
+      status,
     })
     .select()
     .single()
@@ -79,7 +80,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { id, image_url, caption, likes_count, comments_count, display_order, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url } = body
+  const { id, image_url, caption, likes_count, comments_count, display_order, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status } = body
 
   if (!id) {
     return NextResponse.json({ error: "Missing post ID" }, { status: 400 })
@@ -97,6 +98,7 @@ export async function PATCH(request: Request) {
   if (scheduled_for !== undefined) updates.scheduled_for = scheduled_for
   if (overlay_blocks !== undefined) updates.overlay_blocks = overlay_blocks
   if (original_image_url !== undefined) updates.original_image_url = original_image_url
+  if (status !== undefined) updates.status = status
 
   const { data: post, error } = await getSupabase().from("instagram_posts").update(updates).eq("id", id).select().single()
 

@@ -1,5 +1,44 @@
 # Build Log
 
+## Session: 2026-03-08
+
+### Completed (tested, committed, pushed)
+
+**Commit `04599b2` — Add realism feature: prompt chips + canvas filters to de-AI generated images**
+
+**"Add Realism" prompt chips (generation layer):**
+- 5 stackable chips: Real people, Unposed, Phone snap, Disposable, Raw photo
+- Chips inject visible/editable text into the prompt textarea
+- Toggle on/off with auto-deactivation if user manually edits out chip text
+- Chips styled as pills matching existing UI (black fill when active)
+- Located between model picker and prompt textarea on Generate tab
+
+**Realism-aware image description pipeline (the key unlock):**
+- When any realism chip is active, `realismMode: true` is sent to the API
+- Nano Banana "same vibe" path: Claude's image description prompt is modified to describe imperfections (harsh shadows, skin blemishes, awkward poses, unflattering lighting) instead of sanitizing them away
+- GPT Image 1.5 "same vibe" path: prefix updated to resist beautification
+- This was the critical change — without it, Claude's description stripped all rawness and the model defaulted to stock-photo-quality output
+
+**Custom Konva canvas filters (post-processing layer):**
+- Film grain (random luminance noise per pixel)
+- Vignette (radial edge darkening)
+- Chromatic aberration (RGB channel offset)
+- Color cast (warm/cool shift)
+- UI sliders in "Realism" section under existing Background Filters panel
+
+### Design Decisions & Learnings
+- **Prompt language should be about restraint, not degradation** — "do not smooth skin" works better than "add grain and imperfections" which overcooks it
+- **"Same person" chip was removed** — close match mode reproduces the reference person too faithfully (copyright risk). Replaced with "Real people" which pushes toward authentic-looking humans without copying identity
+- **"Keep it real" merged into "Real people"** — eliminated overlap between chips
+- **Claude description prompt is the leverage point** — for Nano Banana same-vibe, the reference pixels never reach the image model. Everything flows through Claude's text description. Modifying that description to preserve imperfections is what made the feature work.
+- **Code review findings:** Performance concern with custom pixel filters on 1080x1080 during slider drag (not yet addressed). No infinite loops or critical bugs found.
+
+### What's NOT Done
+- Performance optimization for custom canvas filters (debounce slider input)
+- JPEG compression artifacts filter (skipped — low visual payoff vs complexity)
+
+---
+
 ## Session: 2026-03-07
 
 ### Completed (all tested, committed, pushed)
