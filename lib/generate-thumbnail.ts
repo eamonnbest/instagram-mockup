@@ -1,9 +1,21 @@
 /**
  * Generates a JPEG thumbnail from a video URL.
- * Seeks to 25% of the video duration to avoid black intros/fades,
- * draws to canvas, uploads via signed URL.
+ * Seeks to 0.1s, waits for the frame to be ready for painting via
+ * requestVideoFrameCallback (with fallback), draws to canvas, uploads.
  */
 import { uploadViaSigned } from "@/lib/upload-signed"
+
+function waitForFrame(video: HTMLVideoElement): Promise<void> {
+  return new Promise((resolve) => {
+    if ("requestVideoFrameCallback" in video) {
+      // Modern API: fires when a frame is actually ready to paint
+      (video as any).requestVideoFrameCallback(() => resolve())
+    } else {
+      // Fallback: small delay to let the frame decode
+      setTimeout(resolve, 200)
+    }
+  })
+}
 
 export async function generateVideoThumbnail(videoUrl: string): Promise<string | null> {
   try {
@@ -19,14 +31,15 @@ export async function generateVideoThumbnail(videoUrl: string): Promise<string |
       video.onerror = () => reject(new Error("Failed to load video for thumbnail"))
     })
 
-    // Seek to 25% of duration to avoid black intros/fades
-    const seekTo = Math.min(video.duration * 0.25, video.duration - 0.1)
-    video.currentTime = Math.max(seekTo, 0.1)
+    // Seek to 0.1s
+    video.currentTime = 0.1
     await new Promise<void>((resolve, reject) => {
       video.onseeked = () => resolve()
-      // Timeout after 10s in case seek never completes
       setTimeout(() => reject(new Error("Seek timed out")), 10000)
     })
+
+    // Wait for the frame to actually be paintable
+    await waitForFrame(video)
 
     const canvas = document.createElement("canvas")
     canvas.width = video.videoWidth
