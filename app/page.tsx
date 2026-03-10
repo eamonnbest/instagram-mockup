@@ -207,7 +207,7 @@ function SortablePost({
         >
           {post.image_url ? (
             post.image_url && isVideoUrl(post.image_url) ? (
-              <video src={post.image_url} muted className="w-full h-full object-cover" />
+              <video src={post.image_url} muted preload="metadata" className="w-full h-full object-cover" />
             ) : (
               <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
             )
@@ -225,7 +225,7 @@ function SortablePost({
           {post.image_url ? (
             post.image_url && isVideoUrl(post.image_url) ? (
               <>
-                <video src={post.image_url} muted className="w-full h-full object-cover" />
+                <video src={post.image_url} muted preload="metadata" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
                     <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
@@ -464,6 +464,21 @@ export default function InstagramPage() {
     setModalCarouselIndex(0)
     setIsEditing(false)
   }
+
+  // Unlock audio on mobile: browsers block programmatic play() unless
+  // the audio element has been "activated" by a user gesture context.
+  // This effect fires when the modal opens (which is itself a tap),
+  // so we briefly play+pause to unlock it.
+  useEffect(() => {
+    const a = modalAudioRef.current
+    if (!a || !selectedPost?.audio_url) return
+    const unlock = () => {
+      a.play().then(() => { a.pause(); a.currentTime = 0 }).catch(() => {})
+    }
+    // Small delay to ensure the audio element is mounted
+    const t = setTimeout(unlock, 100)
+    return () => clearTimeout(t)
+  }, [selectedPost?.id, selectedPost?.audio_url])
 
   function changeNoteAuthor(author: string) {
     setNoteAuthor(author)
@@ -1018,7 +1033,7 @@ export default function InstagramPage() {
                           controls
                           playsInline
                           className="w-full h-full object-contain"
-                          onPlay={() => { const a = modalAudioRef.current; if (a) { a.currentTime = 0; a.play() } }}
+                          onPlay={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
                           onPause={() => { modalAudioRef.current?.pause() }}
                           onEnded={() => { modalAudioRef.current?.pause() }}
                         />
@@ -1316,7 +1331,7 @@ export default function InstagramPage() {
                         controls
                         playsInline
                         className="w-full h-full object-contain"
-                        onPlay={() => { const a = modalAudioRef.current; if (a) { a.currentTime = 0; a.play() } }}
+                        onPlay={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
                         onPause={() => { modalAudioRef.current?.pause() }}
                         onEnded={() => { modalAudioRef.current?.pause() }}
                       />
