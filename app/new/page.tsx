@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import Link from "next/link"
 import { uploadViaSigned } from "@/lib/upload-signed"
 import { AudioTrimmer } from "@/components/audio-trimmer"
+import { generateVideoThumbnail } from "@/lib/generate-thumbnail"
 import { ImageCropper } from "@/components/image-cropper"
 
 export default function NewPostPageWrapper() {
@@ -104,6 +105,7 @@ function NewPostPage() {
   const [generatingMusicPrompt, setGeneratingMusicPrompt] = useState(false)
   const [pendingCropUrl, setPendingCropUrl] = useState<string | null>(null)
   const [videoDuration, setVideoDuration] = useState<number | null>(null)
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
 
   function toggleRealismChip(chipId: string) {
     const chip = REALISM_CHIPS.find((c) => c.id === chipId)
@@ -158,6 +160,7 @@ function NewPostPage() {
           setCarouselImages(images)
           setCaption(post.caption || "")
           if (post.audio_url) setAudioUrl(post.audio_url)
+          if (post.thumbnail_url) setThumbnailUrl(post.thumbnail_url)
           // Restore overlay blocks if saved (stored as { "0": [...], "1": [...] })
           if (post.overlay_blocks && typeof post.overlay_blocks === "object") {
             const blocksMap: Record<number, CanvasBlock[]> = {}
@@ -359,6 +362,10 @@ function NewPostPage() {
       // Videos skip the cropper, images show it
       if (isVideo) {
         applyUploadedUrl(url)
+        // Generate thumbnail in background (don't block the UI)
+        generateVideoThumbnail(url).then((thumb) => {
+          if (thumb) setThumbnailUrl(thumb)
+        })
       } else {
         setPendingCropUrl(url)
       }
@@ -464,8 +471,27 @@ function NewPostPage() {
       const freshImage = exportedImageUrlRef.current
       const finalImages = freshImage
         ? carouselImages.map((img, i) => (i === (editingTextIndex ?? carouselIndex) ? freshImage : img))
-        : carouselImages
+        : [...carouselImages]
       const finalSelectedImage = freshImage || carouselImages[0] || selectedImage
+
+      // If there's a video with audio, mux them into a single file
+      let finalAudioUrl = audioUrl
+      const primaryImage = finalImages[0] || finalSelectedImage
+      if (audioUrl && isVideoUrl(primaryImage)) {
+        try {
+          const { muxVideoAudio } = await import("@/lib/mux-video")
+          const muxedBlob = await muxVideoAudio(primaryImage, audioUrl)
+          const muxedFile = new File([muxedBlob], "muxed.mp4", { type: "video/mp4" })
+          const { url: muxedUrl } = await uploadViaSigned(muxedFile)
+          finalImages[0] = muxedUrl
+          finalAudioUrl = null
+        } catch (muxErr) {
+          console.error("Failed to mux video+audio:", muxErr)
+          setPostError("Failed to combine video and audio. Saving without audio embedded.")
+          // Fall through — save with separate audio as fallback
+        }
+      }
+
       const isEdit = !!editPostId
       const res = await fetch("/api/instagram/posts", {
         method: isEdit ? "PATCH" : "POST",
@@ -479,7 +505,8 @@ function NewPostPage() {
                 carousel_images: finalImages.length > 1 ? finalImages : [],
                 overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
-                audio_url: audioUrl,
+                audio_url: finalAudioUrl,
+                thumbnail_url: thumbnailUrl,
               }
             : {
                 image_url: finalImages[0] || finalSelectedImage,
@@ -489,7 +516,8 @@ function NewPostPage() {
                 carousel_images: finalImages.length > 1 ? finalImages : [],
                 overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
-                audio_url: audioUrl,
+                audio_url: finalAudioUrl,
+                thumbnail_url: thumbnailUrl,
               }
         ),
       })
