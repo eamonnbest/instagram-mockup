@@ -207,7 +207,7 @@ function SortablePost({
         >
           {post.image_url ? (
             post.image_url && isVideoUrl(post.image_url) ? (
-              <video src={post.image_url} muted preload="metadata" className="w-full h-full object-cover" />
+              <video src={post.image_url} muted preload="auto" className="w-full h-full object-cover" />
             ) : (
               <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
             )
@@ -225,7 +225,7 @@ function SortablePost({
           {post.image_url ? (
             post.image_url && isVideoUrl(post.image_url) ? (
               <>
-                <video src={post.image_url} muted preload="metadata" className="w-full h-full object-cover" />
+                <video src={post.image_url} muted preload="auto" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
                     <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
@@ -1033,7 +1033,8 @@ export default function InstagramPage() {
                           controls
                           playsInline
                           className="w-full h-full object-contain"
-                          onPlay={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
+                          onPlaying={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
+                          onWaiting={() => { modalAudioRef.current?.pause() }}
                           onPause={() => { modalAudioRef.current?.pause() }}
                           onEnded={() => { modalAudioRef.current?.pause() }}
                         />
@@ -1331,7 +1332,8 @@ export default function InstagramPage() {
                         controls
                         playsInline
                         className="w-full h-full object-contain"
-                        onPlay={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
+                        onPlaying={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
+                        onWaiting={() => { modalAudioRef.current?.pause() }}
                         onPause={() => { modalAudioRef.current?.pause() }}
                         onEnded={() => { modalAudioRef.current?.pause() }}
                       />
