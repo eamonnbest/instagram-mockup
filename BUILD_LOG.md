@@ -1,5 +1,65 @@
 # Build Log
 
+## Session: 2026-03-10 (night) — Mobile video performance & muxing
+
+### Completed (committed, pushed)
+
+**Mobile performance fixes:**
+- Grid videos: added `preload="metadata"` then `preload="auto"`, finally settled on `poster` attribute with `preload="none"` when thumbnail exists (falls back to `preload="metadata"`)
+- Video-audio sync: changed `onPlay` → `onPlaying` (fires when frames actually render), added `onWaiting` (pauses audio during buffering)
+- Mobile audio unlock: added useEffect that briefly plays/pauses audio to satisfy mobile autoplay policy (later removed — see below)
+- Conditional modal rendering: replaced CSS show/hide (`md:hidden` / `hidden md:flex`) with JS `useIsMobile()` hook + ternary. Only one modal layout (mobile OR desktop) exists in the DOM at a time. Fixes duplicate `<audio ref>` bug.
+
+**Video+audio mux at save time:**
+- When saving a post with video + separate audio, FFmpeg.wasm muxes them into a single MP4 before saving
+- Muxed video replaces original, `audio_url` set to null — one `<video>` element plays everything, no sync issues
+- Dynamic import of `mux-video.ts` (only loads FFmpeg when needed)
+- Falls back to saving with separate audio if mux fails
+
+**Video thumbnails:**
+- New `lib/generate-thumbnail.ts` — shared utility, uses `requestVideoFrameCallback` (with 200ms fallback) to ensure frame is actually paintable before canvas draw
+- Thumbnail generated at save time (not upload time — CDN propagation delay caused failures)
+- `thumbnail_url` column added to `instagram_posts` table
+- API route (POST + PATCH) accepts and stores `thumbnail_url`
+- Grid videos use `poster={thumbnail_url}` for instant display without downloading video
+- Seeks to 0.1s for near-first-frame capture
+
+**Migration (built then removed):**
+- "Fix Videos" button processed existing posts (mux + thumbnail generation)
+- Worked correctly — successfully muxed existing video+audio posts and generated thumbnails
+- Removed after existing posts were fixed — new posts now handle everything at save time
+
+### Key Learnings
+- **`onPlay` fires before frames render** — mobile browsers fire it when playback is "requested", not when frames are visible. `onPlaying` is the correct event for audio sync.
+- **`onseeked` fires before frame is paintable** — canvas `drawImage` draws black. `requestVideoFrameCallback` is the modern solution (guarantees a drawable frame).
+- **Thumbnail generation must happen after CDN propagation** — fire-and-forget at upload time fails because Supabase URL isn't immediately fetchable. Awaiting at save time works.
+- **Duplicate DOM elements with single ref = silent bug** — CSS show/hide means both mobile and desktop `<audio>` elements exist, but `useRef` points to whichever mounts last (desktop). JS conditional rendering is the real fix.
+- **Mobile Safari blocks `audio.play()` from async contexts** — even if the original gesture was a tap, the gesture context expires by the time `onPlaying` fires after buffering. Muxing audio into video is the proper solution.
+
+### What's NOT Done
+- `isVideoUrl()` still duplicated in `page.tsx` and `new/page.tsx`
+- "scheduled ago" text bug still present
+- No auth on API routes (by design)
+- Old posts without thumbnails will fall back to `preload="metadata"` (acceptable)
+
+### Git Commits
+- `55cb468` — Grid video preload + audio sync
+- `a376a95` — Fix desktop modal + onWaiting
+- `0803792` — Conditional mobile/desktop modal rendering
+- `880cf76` — Mux at save, thumbnails, migration button
+- `0f8dc28` — Thumbnail seek to 25% (reverted to 0.1s)
+- `ee41999` — Migration regenerates all thumbnails
+- `5ffdd20` — requestVideoFrameCallback for reliable thumbnails
+- `6fd3bb0` — Move thumbnail to save time, remove migration button
+
+### Next Steps
+- Test mux + thumbnail on mobile after deploy
+- Extract `isVideoUrl()` to shared utility
+- Fix "scheduled ago" text bug
+- Chat UI still duplicated in mobile/desktop sections — but now only one renders at a time (less urgent)
+
+---
+
 ## Session: 2026-03-10 (evening)
 
 ### Completed (committed, pushed)
