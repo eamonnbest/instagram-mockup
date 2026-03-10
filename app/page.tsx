@@ -56,8 +56,6 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { extractColors } from "@/lib/extract-colors"
-import { uploadViaSigned } from "@/lib/upload-signed"
-import { generateVideoThumbnail } from "@/lib/generate-thumbnail"
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(false)
@@ -330,83 +328,6 @@ export default function InstagramPage() {
     if (statusFilter === "all") return posts
     return posts.filter((p) => p.status === statusFilter)
   }, [posts, statusFilter])
-
-  const [migrating, setMigrating] = useState(false)
-  const [migrateStatus, setMigrateStatus] = useState("")
-
-  async function migrateExistingPosts() {
-    setMigrating(true)
-    setMigrateStatus("Starting migration...")
-    try {
-      const videoPosts = posts.filter((p) => p.image_url && isVideoUrl(p.image_url))
-      let muxCount = 0
-      let thumbCount = 0
-
-      for (let i = 0; i < videoPosts.length; i++) {
-        const post = videoPosts[i]
-        setMigrateStatus(`Processing ${i + 1}/${videoPosts.length}: ${post.id.slice(0, 8)}...`)
-        const updates: Record<string, unknown> = { id: post.id }
-        let changed = false
-
-        // Mux video+audio if separate audio exists
-        if (post.audio_url && post.image_url) {
-          try {
-            setMigrateStatus(`Muxing video+audio ${i + 1}/${videoPosts.length}...`)
-            const { muxVideoAudio } = await import("@/lib/mux-video")
-            const muxedBlob = await muxVideoAudio(post.image_url, post.audio_url)
-            const muxedFile = new File([muxedBlob], "muxed.mp4", { type: "video/mp4" })
-            const { url: muxedUrl } = await uploadViaSigned(muxedFile)
-            updates.image_url = muxedUrl
-            updates.audio_url = null
-            // Also update carousel_images if the video is the first item
-            if (post.carousel_images?.length > 0) {
-              updates.carousel_images = post.carousel_images.map((img, idx) =>
-                idx === 0 && isVideoUrl(img) ? muxedUrl : img
-              )
-            }
-            changed = true
-            muxCount++
-          } catch (err) {
-            console.error(`Mux failed for post ${post.id}:`, err)
-          }
-        }
-
-        // Generate or regenerate thumbnail
-        {
-          try {
-            setMigrateStatus(`Generating thumbnail ${i + 1}/${videoPosts.length}...`)
-            const videoSrc = (updates.image_url as string) || post.image_url!
-            const thumb = await generateVideoThumbnail(videoSrc)
-            if (thumb) {
-              updates.thumbnail_url = thumb
-              changed = true
-              thumbCount++
-            }
-          } catch (err) {
-            console.error(`Thumbnail failed for post ${post.id}:`, err)
-          }
-        }
-
-        if (changed) {
-          await fetch("/api/instagram/posts", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(updates),
-          })
-        }
-      }
-
-      setMigrateStatus(`Done! Muxed ${muxCount} videos, generated ${thumbCount} thumbnails.`)
-      // Reload to pick up changes
-      await loadData()
-      setTimeout(() => setMigrateStatus(""), 5000)
-    } catch (err) {
-      console.error("Migration failed:", err)
-      setMigrateStatus("Migration failed. Check console for details.")
-    } finally {
-      setMigrating(false)
-    }
-  }
 
   useEffect(() => {
     loadData()
@@ -974,22 +895,7 @@ export default function InstagramPage() {
                   <GripVertical className="w-3.5 h-3.5 mr-1.5" />
                   {isReordering ? "Done" : "Rearrange"}
                 </Button>
-                {posts.some((p) => p.image_url && isVideoUrl(p.image_url)) && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={migrateExistingPosts}
-                    disabled={migrating}
-                    className="text-xs"
-                  >
-                    {migrating ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5 mr-1.5" />}
-                    {migrating ? "Migrating..." : "Fix Videos"}
-                  </Button>
-                )}
               </>
-            )}
-            {migrateStatus && (
-              <span className="text-xs text-neutral-500 self-center">{migrateStatus}</span>
             )}
           </div>
         )}

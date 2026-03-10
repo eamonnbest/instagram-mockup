@@ -362,10 +362,6 @@ function NewPostPage() {
       // Videos skip the cropper, images show it
       if (isVideo) {
         applyUploadedUrl(url)
-        // Generate thumbnail in background (don't block the UI)
-        generateVideoThumbnail(url).then((thumb) => {
-          if (thumb) setThumbnailUrl(thumb)
-        })
       } else {
         setPendingCropUrl(url)
       }
@@ -492,6 +488,18 @@ function NewPostPage() {
         }
       }
 
+      // Generate thumbnail for video posts
+      let finalThumbnailUrl = thumbnailUrl
+      const videoUrl = finalImages[0] || finalSelectedImage
+      if (isVideoUrl(videoUrl) && !finalThumbnailUrl) {
+        try {
+          const thumb = await generateVideoThumbnail(videoUrl)
+          if (thumb) finalThumbnailUrl = thumb
+        } catch (err) {
+          console.error("Thumbnail generation failed:", err)
+        }
+      }
+
       const isEdit = !!editPostId
       const res = await fetch("/api/instagram/posts", {
         method: isEdit ? "PATCH" : "POST",
@@ -506,7 +514,7 @@ function NewPostPage() {
                 overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
                 audio_url: finalAudioUrl,
-                thumbnail_url: thumbnailUrl,
+                thumbnail_url: finalThumbnailUrl,
               }
             : {
                 image_url: finalImages[0] || finalSelectedImage,
@@ -517,7 +525,7 @@ function NewPostPage() {
                 overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
                 audio_url: finalAudioUrl,
-                thumbnail_url: thumbnailUrl,
+                thumbnail_url: finalThumbnailUrl,
               }
         ),
       })
