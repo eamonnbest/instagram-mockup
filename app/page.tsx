@@ -32,6 +32,8 @@ import {
   XCircle,
   RotateCcw,
   Play,
+  Loader2,
+  Music,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -286,6 +288,8 @@ export default function InstagramPage() {
   })
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null)
   const modalAudioRef = useRef<HTMLAudioElement | null>(null)
+  const [muxing, setMuxing] = useState(false)
+  const [muxProgress, setMuxProgress] = useState("")
   const [isEditing, setIsEditing] = useState(false)
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editCaption, setEditCaption] = useState("")
@@ -402,6 +406,30 @@ export default function InstagramPage() {
       setSelectedPost(null)
     } catch (error) {
       console.error("Failed to delete:", error)
+    }
+  }
+
+  async function downloadWithAudio(videoUrl: string, audioUrl: string) {
+    setMuxing(true)
+    setMuxProgress("Loading FFmpeg...")
+    try {
+      const { muxVideoAudio } = await import("@/lib/mux-video")
+      const blob = await muxVideoAudio(videoUrl, audioUrl, (msg) => setMuxProgress(msg))
+      // Trigger browser download
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "video-with-audio.mp4"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error("Failed to mux video+audio:", error)
+      alert("Failed to combine video and audio. Try downloading them separately.")
+    } finally {
+      setMuxing(false)
+      setMuxProgress("")
     }
   }
 
@@ -1070,7 +1098,7 @@ export default function InstagramPage() {
                         )}
                       </button>
                       <a
-                        title="Download image"
+                        title="Download"
                         href={modalImages[modalCarouselIndex] || "#"}
                         download
                         target="_blank"
@@ -1078,6 +1106,19 @@ export default function InstagramPage() {
                       >
                         <Download className="w-5 h-5" />
                       </a>
+                      {selectedPost.audio_url && currentModalImg && isVideoUrl(currentModalImg) && (
+                        <button
+                          title="Download video with audio"
+                          onClick={() => downloadWithAudio(currentModalImg, selectedPost.audio_url!)}
+                          disabled={muxing}
+                        >
+                          {muxing ? (
+                            <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
+                          ) : (
+                            <Music className="w-5 h-5" />
+                          )}
+                        </button>
+                      )}
                       <button onClick={() => deletePost(selectedPost.id)}>
                         <Trash2 className="w-5 h-5 text-neutral-400" />
                       </button>
@@ -1127,6 +1168,12 @@ export default function InstagramPage() {
                       <audio src={selectedPost.audio_url} controls className="w-full h-8" />
                     </div>
                   )
+                )}
+                {muxing && (
+                  <div className="px-3 py-1.5 border-t border-neutral-100 flex items-center gap-2 text-xs text-neutral-500">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Combining video + audio...
+                  </div>
                 )}
 
                 {/* Chat */}
@@ -1387,6 +1434,12 @@ export default function InstagramPage() {
                     </div>
                   )
                 )}
+                {muxing && (
+                  <div className="border-t border-neutral-200 px-3 py-1.5 flex items-center gap-2 text-xs text-neutral-500">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Combining video + audio...
+                  </div>
+                )}
 
                 {/* Chat */}
                 <div className="border-t border-neutral-200 p-3">
@@ -1507,7 +1560,7 @@ export default function InstagramPage() {
                         )}
                       </button>
                       <a
-                        title="Download image"
+                        title="Download"
                         href={modalImages[modalCarouselIndex] || "#"}
                         download
                         target="_blank"
@@ -1515,6 +1568,20 @@ export default function InstagramPage() {
                       >
                         <Download className="w-5 h-5 cursor-pointer hover:text-neutral-500" />
                       </a>
+                      {selectedPost.audio_url && currentModalImg && isVideoUrl(currentModalImg) && (
+                        <button
+                          title="Download video with audio"
+                          onClick={() => downloadWithAudio(currentModalImg, selectedPost.audio_url!)}
+                          disabled={muxing}
+                          className="cursor-pointer hover:text-neutral-500"
+                        >
+                          {muxing ? (
+                            <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
+                          ) : (
+                            <Music className="w-5 h-5" />
+                          )}
+                        </button>
+                      )}
                       <button onClick={() => deletePost(selectedPost.id)}>
                         <Trash2 className="w-5 h-5 cursor-pointer hover:text-red-500" />
                       </button>

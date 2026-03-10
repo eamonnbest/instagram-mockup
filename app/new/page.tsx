@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from "react"
 import Image from "next/image"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type, Play, Music, Trash2, Scissors } from "lucide-react"
+import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type, Play, Music, Trash2, Scissors, Crop } from "lucide-react"
 import dynamic from "next/dynamic"
 import type { CanvasBlock, TextOverlayEditorHandle } from "@/components/text-overlay-editor"
 import { templates, hydrateTemplate } from "@/lib/templates"
@@ -17,8 +17,9 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
-import { uploadFileAction } from "@/lib/upload-action"
+import { uploadViaSigned } from "@/lib/upload-signed"
 import { AudioTrimmer } from "@/components/audio-trimmer"
+import { ImageCropper } from "@/components/image-cropper"
 
 export default function NewPostPageWrapper() {
   return (
@@ -101,6 +102,8 @@ function NewPostPage() {
   const [activeMusicStyles, setActiveMusicStyles] = useState<Set<string>>(new Set())
   const [trimming, setTrimming] = useState(false)
   const [generatingMusicPrompt, setGeneratingMusicPrompt] = useState(false)
+  const [pendingCropUrl, setPendingCropUrl] = useState<string | null>(null)
+  const [videoDuration, setVideoDuration] = useState<number | null>(null)
 
   function toggleRealismChip(chipId: string) {
     const chip = REALISM_CHIPS.find((c) => c.id === chipId)
@@ -335,24 +338,33 @@ function NewPostPage() {
     }
   }
 
+  function applyUploadedUrl(url: string) {
+    if (addingMore) {
+      setCarouselImages((prev) => [...prev, url])
+      setCarouselIndex(carouselImages.length)
+      setAddingMore(false)
+    } else {
+      setSelectedImage(url)
+      setCarouselImages([url])
+      setCarouselIndex(0)
+    }
+  }
+
   async function handleFileUpload(file: File) {
     setUploading(true)
     try {
-      const formData = new FormData()
-      formData.append("file", file)
-      const { url } = await uploadFileAction(formData)
-      if (addingMore) {
-        setCarouselImages((prev) => [...prev, url])
-        setCarouselIndex(carouselImages.length)
-        setAddingMore(false)
+      // Use signed URL upload — file goes directly from browser to Supabase,
+      // bypassing Vercel's 4.5MB request body limit
+      const { url, isVideo } = await uploadViaSigned(file)
+      // Videos skip the cropper, images show it
+      if (isVideo) {
+        applyUploadedUrl(url)
       } else {
-        setSelectedImage(url)
-        setCarouselImages([url])
-        setCarouselIndex(0)
+        setPendingCropUrl(url)
       }
     } catch (error) {
-      console.error("Failed to upload image:", error)
-      alert(error instanceof Error ? error.message : "Failed to upload image")
+      console.error("Failed to upload file:", error)
+      alert(error instanceof Error ? error.message : "Failed to upload file")
     } finally {
       setUploading(false)
     }
@@ -514,8 +526,55 @@ function NewPostPage() {
           </div>
         ) : (
         <>
+        {/* Image cropper — shown after uploading a non-square image */}
+        {pendingCropUrl && (
+          <div className="mb-6 max-w-md mx-auto">
+            <ImageCropper
+              imageUrl={pendingCropUrl}
+              onCrop={async (croppedDataUrl) => {
+                // Convert data URL to blob and upload
+                try {
+                  setUploading(true)
+                  const res = await fetch(croppedDataUrl)
+                  const blob = await res.blob()
+                  const file = new File([blob], "cropped.png", { type: "image/png" })
+                  const { url } = await uploadViaSigned(file)
+
+                  // If we already have a selected image, this is a reposition — replace in-place
+                  if (selectedImage && carouselImages.length > 0) {
+                    const idx = carouselIndex
+                    setCarouselImages((prev) => prev.map((img, i) => (i === idx ? url : img)))
+                    if (idx === 0) setSelectedImage(url)
+                  } else {
+                    applyUploadedUrl(url)
+                  }
+                  setPendingCropUrl(null)
+                } catch (error) {
+                  console.error("Failed to upload cropped image:", error)
+                  alert("Failed to upload cropped image. Please try again.")
+                } finally {
+                  setUploading(false)
+                }
+              }}
+              onCancel={() => {
+                // Skip — if repositioning, just close. If new upload, use original as-is.
+                if (!selectedImage || carouselImages.length === 0) {
+                  applyUploadedUrl(pendingCropUrl)
+                }
+                setPendingCropUrl(null)
+              }}
+            />
+            {uploading && (
+              <div className="flex items-center justify-center mt-3 gap-2 text-xs text-neutral-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Uploading cropped image...
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Selected image preview + caption */}
-        {selectedImage && !addingMore && (
+        {selectedImage && !addingMore && !pendingCropUrl && (
           <div className="mb-6">
             {editingTextIndex !== null ? (
               <div className="max-w-md mx-auto">
@@ -545,20 +604,11 @@ function NewPostPage() {
                       const res = await fetch(dataUrl)
                       const blob = await res.blob()
                       const file = new File([blob], "text-overlay.png", { type: "image/png" })
-                      const formData = new FormData()
-                      formData.append("file", file)
-                      const uploadRes = await fetch("/api/instagram/upload", {
-                        method: "POST",
-                        body: formData,
-                      })
-                      if (!uploadRes.ok) {
-                        throw new Error("Upload failed")
-                      }
-                      const data = await uploadRes.json()
-                      setCarouselImages((prev) => prev.map((img, i) => (i === idx ? data.imageUrl : img)))
-                      if (idx === 0) setSelectedImage(data.imageUrl)
+                      const { url: uploadedUrl } = await uploadViaSigned(file)
+                      setCarouselImages((prev) => prev.map((img, i) => (i === idx ? uploadedUrl : img)))
+                      if (idx === 0) setSelectedImage(uploadedUrl)
                       // Store exported URL in ref so createPost can read it immediately (state updates are async)
-                      exportedImageUrlRef.current = data.imageUrl
+                      exportedImageUrlRef.current = uploadedUrl
                       setEditingTextIndex(null)
                     } catch (error) {
                       console.error("Failed to export text overlay:", error)
@@ -579,7 +629,24 @@ function NewPostPage() {
             {/* Carousel viewer */}
             <div className="aspect-square max-w-md mx-auto relative bg-neutral-100 rounded-lg overflow-hidden">
               {isVideoUrl(carouselImages[carouselIndex] || selectedImage || "") ? (
-                <video src={carouselImages[carouselIndex] || selectedImage || ""} controls playsInline className="w-full h-full object-cover" />
+                <video
+                  src={carouselImages[carouselIndex] || selectedImage || ""}
+                  controls
+                  playsInline
+                  className="w-full h-full object-cover"
+                  onLoadedMetadata={(e) => {
+                    const dur = (e.target as HTMLVideoElement).duration
+                    if (dur && isFinite(dur)) {
+                      setVideoDuration(Math.round(dur))
+                      // Auto-set music duration to match video length (pick closest option)
+                      const options = [10, 15, 30, 60, 120, 180, 300]
+                      const closest = options.reduce((prev, curr) =>
+                        Math.abs(curr - dur) < Math.abs(prev - dur) ? curr : prev
+                      )
+                      setMusicDuration(closest)
+                    }
+                  }}
+                />
               ) : (
                 <Image src={carouselImages[carouselIndex] || selectedImage} alt="Selected" fill className="object-cover" unoptimized />
               )}
@@ -663,17 +730,32 @@ function NewPostPage() {
               )}
             </div>
 
-            {/* Add Text Overlay */}
-            <div className="max-w-md mx-auto mt-3">
+            {/* Edit / Reposition buttons */}
+            <div className="max-w-md mx-auto mt-3 flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setEditingTextIndex(carouselIndex)}
-                className="w-full"
+                className="flex-1"
               >
                 <Type className="w-4 h-4 mr-1.5" />
                 Edit Image
               </Button>
+              {!isVideoUrl(carouselImages[carouselIndex] || selectedImage || "") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Use the original (un-overlayed) image if available, otherwise current
+                    const imgUrl = originalImageUrls[carouselIndex] || carouselImages[carouselIndex] || selectedImage || ""
+                    setPendingCropUrl(imgUrl)
+                  }}
+                  className="flex-1"
+                >
+                  <Crop className="w-4 h-4 mr-1.5" />
+                  Reposition
+                </Button>
+              )}
             </div>
             </>
             )}
@@ -898,6 +980,11 @@ function NewPostPage() {
                               <option value={180}>3 min</option>
                               <option value={300}>5 min</option>
                             </select>
+                            {videoDuration && (
+                              <span className="text-xs text-neutral-400">
+                                Video: {videoDuration}s
+                              </span>
+                            )}
                           </div>
                           <label className="flex items-center gap-1.5 text-xs text-neutral-600 cursor-pointer">
                             <input
@@ -997,7 +1084,7 @@ function NewPostPage() {
         )}
 
         {/* Image source — show when no image selected or adding more to carousel */}
-        {(!selectedImage || addingMore) && (
+        {(!selectedImage || addingMore) && !pendingCropUrl && (
           <>
             {addingMore && (
               <div className="flex items-center justify-between mb-3">

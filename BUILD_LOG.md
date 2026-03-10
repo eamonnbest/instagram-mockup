@@ -1,5 +1,187 @@
 # Build Log
 
+## Session: 2026-03-10 (evening)
+
+### Completed (committed, pushed)
+
+**Commit (pending) — Signed URL uploads, image crop/reposition, video+audio mux download**
+
+**Signed URL uploads (bypass Vercel 4.5MB limit):**
+- New API route `POST /api/instagram/upload-url` — generates time-limited Supabase signed upload URLs using service role key
+- New client helper `lib/upload-signed.ts` — uses Supabase SDK `uploadToSignedUrl` for browser-direct uploads
+- All uploads in `/new` page and audio trimmer now use signed URLs (file goes browser → Supabase, never touches Vercel)
+- Text overlay export also switched to signed URL (was using old route handler, could fail for large PNGs)
+- Deleted dead `lib/upload-action.ts` (server action no longer used)
+- Input validation on upload-url route (contentType string, fileSize number)
+
+**Image crop/reposition (`components/image-cropper.tsx`):**
+- Konva-based 1080x1080 square crop with drag-to-reposition and zoom (1x–3x)
+- Cover-mode initial fit (landscape overflows width, portrait overflows height, centered)
+- Drag constrained so image always covers the frame
+- Scroll wheel zoom support, center-zoom calculation
+- Integrated into `/new` page: appears after uploading a non-square image
+- "Reposition" button in preview area to re-crop existing images
+- Reposition replaces current carousel image in-place (not additive)
+- Videos bypass the cropper entirely
+
+**Video + audio mux download (`lib/mux-video.ts`):**
+- FFmpeg.wasm (browser-side) combines video + audio into a single MP4
+- Lazy-loads FFmpeg core from CDN (~25MB, only on first use), cached for reuse
+- Video stream copied (no re-encode = fast), audio encoded as AAC, `-shortest` flag
+- Music icon button in both mobile + desktop modals (only when post has video + audio)
+- "Combining video + audio..." progress indicator while muxing
+- Falls back to error alert if mux fails
+
+**Music duration references video length:**
+- Video preview captures duration via `onLoadedMetadata`
+- Music duration picker auto-selects closest option to video length
+- Shows "Video: Xs" label next to duration dropdown
+
+**Code review fixes:**
+- Removed unused `Rect` import from image-cropper
+- Input validation on upload-url API route
+- Switched text overlay export to signed URL upload
+- Deleted dead `lib/upload-action.ts`
+
+### Design Decisions & Learnings
+- **Vercel Hobby has a hard 4.5MB request body limit** — `serverActions.bodySizeLimit` only controls Next.js, not Vercel's infrastructure. Signed URLs bypass this entirely.
+- **Supabase signed upload URLs need the SDK** — raw `PUT` fetch to the signed URL doesn't work. Must use `supabase.storage.from(bucket).uploadToSignedUrl(path, token, file)`.
+- **FFmpeg.wasm is ~25MB** but lazy-loaded (dynamic import) so it doesn't affect initial bundle. Single-thread core is sufficient for muxing (no re-encoding needed). Multi-thread core requires `SharedArrayBuffer` + COOP/COEP headers which Vercel doesn't set by default.
+- **pnpm is the package manager** for this project (not npm). npm fails with arborist errors due to `.pnpm` directory structure.
+
+### What's NOT Done
+- `isVideoUrl()` still duplicated in `page.tsx` and `new/page.tsx` — should be shared utility
+- "scheduled ago" text bug in mobile modal still present
+- No auth on any API routes (consistent with rest of app — no auth system)
+- `fileSize` validation on upload-url is advisory (client self-reports; actual enforcement would need Supabase bucket policies)
+- Chat UI still duplicated in mobile and desktop sections of `page.tsx`
+
+### Key Files (new/updated)
+- `app/api/instagram/upload-url/route.ts` — NEW: Signed upload URL generation
+- `lib/upload-signed.ts` — NEW: Client-side signed URL upload helper
+- `lib/mux-video.ts` — NEW: FFmpeg.wasm video+audio muxing
+- `components/image-cropper.tsx` — NEW: Konva-based image crop/zoom/reposition
+- `app/new/page.tsx` — Cropper integration, signed URL uploads, video duration, reposition button
+- `components/audio-trimmer.tsx` — Switched to signed URL upload
+- `app/page.tsx` — Mux download button, muxing state/progress
+
+### Next Steps (if continuing)
+- Test signed URL uploads on Vercel (deploy and try video upload)
+- Test image cropper with various aspect ratios (portrait, landscape, already-square)
+- Test FFmpeg mux download (video+audio post)
+- Extract `isVideoUrl()` to shared utility
+- Fix "scheduled ago" text bug
+- Consider extracting chat UI to shared component
+
+---
+
+## Session: 2026-03-10 (earlier)
+
+### Completed (committed, pushed)
+
+**Commit `43dd0a9` — Add DM outreach tool and video upload support**
+
+**DM outreach tool (`/dms`):**
+- Table-based outreach tracker: business name, status, timestamps, delete
+- Inline "Add" form, status filter pills (drafted/sent/replied/follow_up)
+- Collapsible "Your Style" section for AI training (example DMs + style rules)
+- Thread detail page (`/dms/[id]`): conversation log with compose bar
+- Sender toggle (your message / their reply), tone picker (casual/professional/playful/direct)
+- AI polish via Claude Haiku with inline replacement + undo
+- Templates shown on first message when compose empty
+- DB tables: `dm_threads`, `dm_messages` (user ran SQL in Supabase)
+- Site settings keys: `dm_style_examples`, `dm_style_rules`
+- Nav links added to main page + ads page
+
+**Video upload support:**
+- Upload route detects MP4/MOV/WebM via magic byte detection
+- Separate `post-videos` Supabase bucket (50MB limit, public)
+- Video rendering in grid (play icon overlay), mobile modal, desktop modal
+- `/new` page: file input accepts video MIME types, preview renders `<video>`, thumbnail strip with play icons
+- `isVideoUrl()` helper checks file extensions in URLs
+
+**Commit `0e90f1c` — Add music generation with ElevenLabs, trim, prompt assist, video-audio sync**
+
+**Music generation (ElevenLabs Eleven Music API):**
+- API route `POST /api/instagram/music` — prompt + duration + instrumental → MP3 → Supabase `post-audio` bucket
+- 8 genre/mood presets: Indie, Lo-fi, Acoustic, Electronic, Cinematic, Punk/Raw, Soul/R&B, Ambient
+- Multi-select styles with anti-stock-music prompt engineering
+- Duration picker (10s–5min), instrumental on by default
+- Collapsible "Add music" section in `/new` page
+- `audio_url` column added to `instagram_posts` table
+- Audio player in post modals (both mobile + desktop)
+
+**Audio trimmer (`components/audio-trimmer.tsx`):**
+- Client-side trim using Web Audio API + OfflineAudioContext
+- Start/end time sliders, preview clip, save as WAV
+- Error state for load failures, AudioContext cleanup, division-by-zero guards
+
+**Prompt assist (`POST /api/instagram/music-prompt`):**
+- Claude Haiku generates detailed music prompts from simple descriptions + selected styles
+- "Help me write a better prompt" link in music section
+
+**Video-audio sync:**
+- When post has both video + audio: music plays/pauses/stops in sync with video playback
+- Hidden `<audio>` element controlled via video `onPlay`/`onPause`/`onEnded` events
+- Image posts still show visible audio player
+
+**Server action upload (`lib/upload-action.ts`):**
+- Bypasses Next.js body size limit for large video files
+- Uses service role key (no RLS issues)
+- Supports images, videos, and audio files
+- `next.config.ts`: `serverActions.bodySizeLimit: "100mb"`
+
+**Code review fixes:**
+- Removed `autoPlay` from desktop modal video (was causing double audio)
+- Deleted dead `lib/upload.ts` (replaced by upload-action.ts)
+- AudioContext cleanup on trimmer unmount
+- Division-by-zero guards in trimmer timeline
+- Error state when audio fails to load for trimming
+
+### Design Decisions & Learnings
+- **DM tool went through 3 UX redesigns** — started as Instagram-style chat, became table tracker, then conversation log. Key insight: this is a writing/tracking tool, not a messaging app
+- **AI polish disconnect** was the hardest UX bug — polish showed in separate panel but didn't connect to saving. Fixed by making polish replace text inline with undo
+- **AI voice too generic** — solved with style training (example DMs + rules stored in site_settings)
+- **Next.js App Router has no per-route body size config** for route handlers — only `serverActions.bodySizeLimit` works. Had to convert upload to a Server Action for large files
+- **Supabase RLS blocks anon key uploads** — direct browser upload failed because bucket has RLS. Kept server-side upload with service role key
+- **ElevenLabs inpainting is enterprise-only** — "Remix" just regenerates with modified prompt instead
+- **Suno has no official API** — only third-party wrappers. User tried ElevenLabs, quality was "too generic". Added genre presets + prompt assist to improve output quality
+
+### What's NOT Done
+- **Image crop/zoom/reposition** — user wants Konva-native implementation (no new deps). Not started yet.
+- Video upload still fails through old route handler (only server action works for large files). Other upload paths (reference image, text overlay export) still use old route — fine since they're small files.
+- No rate limiting on music/prompt API routes (cost exposure risk — noted in code review)
+- `isVideoUrl()` duplicated in `page.tsx` and `new/page.tsx` with subtly different implementations — should be shared utility
+- "scheduled ago" text bug in mobile modal (`formatTimeAgo` returns "scheduled" + template appends " ago")
+
+### Key Files (new/updated)
+- `app/api/instagram/dms/route.ts` — Threads CRUD
+- `app/api/instagram/dms/messages/route.ts` — Messages CRUD
+- `app/api/instagram/dms/polish/route.ts` — AI polish with style config
+- `app/dms/page.tsx` — Outreach list with style training
+- `app/dms/[id]/page.tsx` — Thread detail conversation log
+- `app/api/instagram/music/route.ts` — ElevenLabs music generation
+- `app/api/instagram/music-prompt/route.ts` — Claude prompt assist
+- `app/api/instagram/upload/route.ts` — Upload with video detection
+- `lib/upload-action.ts` — Server action upload for large files
+- `components/audio-trimmer.tsx` — Client-side audio trimmer
+- `app/new/page.tsx` — Post creation with video, music, trim, prompt assist
+- `app/page.tsx` — Video rendering + audio sync in modals
+- `app/api/instagram/posts/route.ts` — audio_url support
+- `app/api/site-settings/route.ts` — DM style keys
+
+### Git
+- `43dd0a9` — DM outreach tool + video upload
+- `0e90f1c` — Music generation, trim, prompt assist, video-audio sync
+
+### Next Steps (if continuing)
+- Build Konva-native image crop/zoom/reposition in the post creation flow
+- Extract `isVideoUrl()` to shared utility
+- Fix "scheduled ago" text bug
+- Consider rate limiting on paid API routes
+
+---
+
 ## Session: 2026-03-09
 
 ### Completed (committed, pushed)

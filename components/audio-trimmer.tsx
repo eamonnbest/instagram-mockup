@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { Scissors, Play, Square, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { uploadFileAction } from "@/lib/upload-action"
+import { uploadViaSigned } from "@/lib/upload-signed"
 
 function formatTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -162,11 +162,7 @@ export function AudioTrimmer({ audioUrl, onSave, onCancel }: AudioTrimmerProps) 
       const wav = audioBufferToWav(rendered)
       const file = new File([wav], "clip.wav", { type: "audio/wav" })
 
-      const formData = new FormData()
-      formData.append("file", file)
-
-      // Add audio/wav to the upload action's allowed types
-      const { url } = await uploadFileAction(formData)
+      const { url } = await uploadViaSigned(file)
       onSave(url)
     } catch (error) {
       console.error("Failed to save clip:", error)
