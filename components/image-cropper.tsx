@@ -6,8 +6,8 @@ import type Konva from "konva"
 import { Button } from "@/components/ui/button"
 import { ZoomIn, ZoomOut, Check, X } from "lucide-react"
 
-const CANVAS_SIZE = 1080
-const DISPLAY_SIZE = 400 // CSS display size
+const EXPORT_SIZE = 1080  // Final exported image size
+const DISPLAY_SIZE = 600  // On-screen canvas size
 
 interface ImageCropperProps {
   imageUrl: string
@@ -19,9 +19,8 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [scale, setScale] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
-  const [imgNaturalSize, setImgNaturalSize] = useState({ w: 0, h: 0 })
+  const [baseSize, setBaseSize] = useState({ w: 0, h: 0 })
   const stageRef = useRef<Konva.Stage>(null)
-  const imageRef = useRef<Konva.Image>(null)
 
   // Load the image
   useEffect(() => {
@@ -29,77 +28,80 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
     img.crossOrigin = "anonymous"
     img.onload = () => {
       setImage(img)
-      setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight })
 
-      // Calculate initial fit: image covers the square (cover mode)
       const imgRatio = img.naturalWidth / img.naturalHeight
-      let fitW: number, fitH: number, fitX: number, fitY: number
 
+      // Base size = contain fit (entire image visible inside the display square)
+      let baseW: number, baseH: number
       if (imgRatio > 1) {
-        // Landscape: height fills canvas, width overflows
-        fitH = CANVAS_SIZE
-        fitW = CANVAS_SIZE * imgRatio
-        fitX = -(fitW - CANVAS_SIZE) / 2
-        fitY = 0
+        baseW = DISPLAY_SIZE
+        baseH = DISPLAY_SIZE / imgRatio
       } else {
-        // Portrait or square: width fills canvas, height overflows
-        fitW = CANVAS_SIZE
-        fitH = CANVAS_SIZE / imgRatio
-        fitX = 0
-        fitY = -(fitH - CANVAS_SIZE) / 2
+        baseH = DISPLAY_SIZE
+        baseW = DISPLAY_SIZE * imgRatio
       }
 
-      setPosition({ x: fitX, y: fitY })
-      setImgNaturalSize({ w: fitW, h: fitH })
+      setBaseSize({ w: baseW, h: baseH })
+
+      // Start at cover fit (fills the square, no black bars)
+      const coverScale = Math.max(DISPLAY_SIZE / baseW, DISPLAY_SIZE / baseH)
+
+      const scaledW = baseW * coverScale
+      const scaledH = baseH * coverScale
+      const startX = -(scaledW - DISPLAY_SIZE) / 2
+      const startY = -(scaledH - DISPLAY_SIZE) / 2
+
+      setScale(coverScale)
+      setPosition({ x: startX, y: startY })
     }
     img.src = imageUrl
   }, [imageUrl])
 
-  // Constrain position so image always covers the square
-  const constrainPosition = useCallback((x: number, y: number, s: number, imgW: number, imgH: number) => {
-    const scaledW = imgW * s
-    const scaledH = imgH * s
+  // Constrain position
+  const constrainPosition = useCallback((x: number, y: number, s: number, bw: number, bh: number) => {
+    const scaledW = bw * s
+    const scaledH = bh * s
 
-    // Image must cover the full canvas: right edge >= CANVAS_SIZE, left edge <= 0, etc.
-    const minX = CANVAS_SIZE - scaledW
-    const maxX = 0
-    const minY = CANVAS_SIZE - scaledH
-    const maxY = 0
+    let cx: number, cy: number
 
-    return {
-      x: Math.min(maxX, Math.max(minX, x)),
-      y: Math.min(maxY, Math.max(minY, y)),
+    if (scaledW >= DISPLAY_SIZE) {
+      cx = Math.min(0, Math.max(DISPLAY_SIZE - scaledW, x))
+    } else {
+      cx = (DISPLAY_SIZE - scaledW) / 2
     }
+
+    if (scaledH >= DISPLAY_SIZE) {
+      cy = Math.min(0, Math.max(DISPLAY_SIZE - scaledH, y))
+    } else {
+      cy = (DISPLAY_SIZE - scaledH) / 2
+    }
+
+    return { x: cx, y: cy }
   }, [])
 
   function handleDragEnd(e: Konva.KonvaEventObject<DragEvent>) {
     const node = e.target
-    const constrained = constrainPosition(node.x(), node.y(), scale, imgNaturalSize.w, imgNaturalSize.h)
+    const constrained = constrainPosition(node.x(), node.y(), scale, baseSize.w, baseSize.h)
     node.position(constrained)
     setPosition(constrained)
   }
 
   function handleDragMove(e: Konva.KonvaEventObject<DragEvent>) {
     const node = e.target
-    const constrained = constrainPosition(node.x(), node.y(), scale, imgNaturalSize.w, imgNaturalSize.h)
+    const constrained = constrainPosition(node.x(), node.y(), scale, baseSize.w, baseSize.h)
     node.position(constrained)
   }
 
   function handleZoom(newScale: number) {
-    const s = Math.max(1, Math.min(3, newScale))
+    const s = Math.max(1, Math.min(4, newScale))
 
-    // Adjust position to zoom from center
-    const centerX = CANVAS_SIZE / 2
-    const centerY = CANVAS_SIZE / 2
+    const centerX = DISPLAY_SIZE / 2
+    const centerY = DISPLAY_SIZE / 2
 
-    const oldX = position.x
-    const oldY = position.y
+    const newX = centerX - ((centerX - position.x) / scale) * s
+    const newY = centerY - ((centerY - position.y) / scale) * s
 
-    // Calculate new position so zoom centers on the middle of the visible area
-    const newX = centerX - ((centerX - oldX) / scale) * s
-    const newY = centerY - ((centerY - oldY) / scale) * s
-
-    const constrained = constrainPosition(newX, newY, s, imgNaturalSize.w, imgNaturalSize.h)
+    const constrained = constrainPosition(newX, newY, s, baseSize.w, baseSize.h)
     setScale(s)
     setPosition(constrained)
   }
@@ -113,22 +115,24 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
   function applyCrop() {
     if (!stageRef.current) return
 
-    // Export the stage (which is clipped to the square) as a data URL
+    // Export at high resolution (EXPORT_SIZE x EXPORT_SIZE)
+    const ratio = EXPORT_SIZE / DISPLAY_SIZE
     const dataUrl = stageRef.current.toDataURL({
       x: 0,
       y: 0,
-      width: CANVAS_SIZE,
-      height: CANVAS_SIZE,
-      pixelRatio: 1,
+      width: DISPLAY_SIZE,
+      height: DISPLAY_SIZE,
+      pixelRatio: ratio,
     })
 
     onCrop(dataUrl)
   }
 
-  // Check if image needs cropping (is it not already square?)
   const isSquare = image && Math.abs(image.naturalWidth - image.naturalHeight) < 2
 
-  const displayScale = DISPLAY_SIZE / CANVAS_SIZE
+  const coverScale = baseSize.w > 0 && baseSize.h > 0
+    ? Math.max(DISPLAY_SIZE / baseSize.w, DISPLAY_SIZE / baseSize.h)
+    : 1
 
   return (
     <div className="space-y-3">
@@ -141,26 +145,23 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
 
       {/* Canvas */}
       <div
-        className="mx-auto rounded-lg overflow-hidden bg-neutral-900"
+        className="mx-auto rounded-lg overflow-hidden bg-neutral-900 cursor-grab active:cursor-grabbing"
         style={{ width: DISPLAY_SIZE, height: DISPLAY_SIZE }}
       >
         <Stage
           ref={stageRef}
-          width={CANVAS_SIZE}
-          height={CANVAS_SIZE}
-          style={{ width: DISPLAY_SIZE, height: DISPLAY_SIZE }}
+          width={DISPLAY_SIZE}
+          height={DISPLAY_SIZE}
           onWheel={handleWheel}
         >
           <Layer>
-            {/* Clip region — only show what's inside the square */}
             {image && (
               <KonvaImage
-                ref={imageRef}
                 image={image}
                 x={position.x}
                 y={position.y}
-                width={imgNaturalSize.w}
-                height={imgNaturalSize.h}
+                width={baseSize.w}
+                height={baseSize.h}
                 scaleX={scale}
                 scaleY={scale}
                 draggable
@@ -168,20 +169,19 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
                 onDragMove={handleDragMove}
               />
             )}
-            {/* Clip mask — dim area outside square (visual guide) */}
           </Layer>
         </Stage>
       </div>
 
       {/* Zoom slider */}
-      <div className="flex items-center gap-2 max-w-[400px] mx-auto">
+      <div className="flex items-center gap-2 max-w-[600px] mx-auto">
         <button onClick={() => handleZoom(scale - 0.1)} className="p-1 hover:bg-neutral-100 rounded">
           <ZoomOut className="w-4 h-4 text-neutral-500" />
         </button>
         <input
           type="range"
           min={1}
-          max={3}
+          max={4}
           step={0.01}
           value={scale}
           onChange={(e) => handleZoom(Number(e.target.value))}
@@ -193,8 +193,15 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
         <span className="text-xs text-neutral-400 w-10 text-right">{Math.round(scale * 100)}%</span>
       </div>
 
+      {/* Cover indicator */}
+      {scale < coverScale && (
+        <p className="text-xs text-amber-500 text-center">
+          Zoom in to {Math.round(coverScale * 100)}%+ to fill the square (no black bars)
+        </p>
+      )}
+
       {/* Controls */}
-      <div className="flex gap-2 max-w-[400px] mx-auto">
+      <div className="flex gap-2 max-w-[600px] mx-auto">
         <Button size="sm" onClick={applyCrop} className="flex-1">
           <Check className="w-3.5 h-3.5 mr-1" />
           Apply crop
