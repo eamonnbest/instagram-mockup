@@ -31,6 +31,7 @@ import {
   Check,
   XCircle,
   RotateCcw,
+  Play,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -53,6 +54,11 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { extractColors } from "@/lib/extract-colors"
+
+function isVideoUrl(url: string): boolean {
+  const ext = url.split("?")[0].split(".").pop()?.toLowerCase()
+  return ["mp4", "mov", "webm"].includes(ext || "")
+}
 
 interface InstagramPost {
   id: string
@@ -197,7 +203,11 @@ function SortablePost({
           className="w-full h-full relative cursor-grab active:cursor-grabbing"
         >
           {post.image_url ? (
-            <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
+            post.image_url && isVideoUrl(post.image_url) ? (
+              <video src={post.image_url} muted className="w-full h-full object-cover" />
+            ) : (
+              <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
+            )
           ) : (
             <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
               <span className="text-neutral-400 text-xs">No image</span>
@@ -210,7 +220,18 @@ function SortablePost({
       ) : (
         <button onClick={() => onOpen(post)} className="w-full h-full relative">
           {post.image_url ? (
-            <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
+            post.image_url && isVideoUrl(post.image_url) ? (
+              <>
+                <video src={post.image_url} muted className="w-full h-full object-cover" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+                    <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
+            )
           ) : (
             <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
               <span className="text-neutral-400 text-xs">No image</span>
@@ -579,6 +600,9 @@ export default function InstagramPage() {
         <div className="md:hidden flex items-center justify-between px-4 py-2.5">
           <Image src="/instagram-logo.png" alt="Instagram" width={110} height={32} className="h-7 w-auto" />
           <div className="flex items-center gap-5">
+            <Link href="/dms">
+              <Send className="w-6 h-6" />
+            </Link>
             <Link href="/ads">
               <Megaphone className="w-6 h-6" />
             </Link>
@@ -588,7 +612,6 @@ export default function InstagramPage() {
             <Link href="/calendar">
               <Heart className="w-6 h-6" />
             </Link>
-            <Send className="w-6 h-6 cursor-pointer opacity-50" />
           </div>
         </div>
         {/* Desktop header */}
@@ -602,6 +625,9 @@ export default function InstagramPage() {
             priority
           />
           <div className="flex items-center gap-4">
+            <Link href="/dms" className="text-sm font-medium hover:opacity-70">
+              DMs
+            </Link>
             <Link href="/ads" className="text-sm font-medium hover:opacity-70">
               Ads
             </Link>
@@ -952,18 +978,27 @@ export default function InstagramPage() {
 
               {/* Scrollable content */}
               <div className="flex-1 overflow-y-auto">
-                {/* Square image */}
+                {/* Square image/video */}
                 <div className="relative w-full aspect-square bg-black">
                   {currentModalImg ? (
                     <>
-                      <Image
-                        src={currentModalImg}
-                        alt={selectedPost.caption || "Post"}
-                        fill
-                        sizes="100vw"
-                        className="object-cover"
-                        unoptimized
-                      />
+                      {isVideoUrl(currentModalImg) ? (
+                        <video
+                          src={currentModalImg}
+                          controls
+                          playsInline
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <Image
+                          src={currentModalImg}
+                          alt={selectedPost.caption || "Post"}
+                          fill
+                          sizes="100vw"
+                          className="object-cover"
+                          unoptimized
+                        />
+                      )}
                       {modalImages.length > 1 && (
                         <>
                           {modalCarouselIndex > 0 && (
@@ -1212,14 +1247,24 @@ export default function InstagramPage() {
               <div className="relative w-[600px] aspect-square flex-shrink-0 bg-black">
                 {currentModalImg ? (
                   <>
-                    <Image
-                      src={currentModalImg}
-                      alt={selectedPost.caption || "Post"}
-                      fill
-                      sizes="600px"
-                      className="object-cover"
-                      unoptimized
-                    />
+                    {isVideoUrl(currentModalImg) ? (
+                      <video
+                        src={currentModalImg}
+                        controls
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <Image
+                        src={currentModalImg}
+                        alt={selectedPost.caption || "Post"}
+                        fill
+                        sizes="600px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    )}
                     {modalImages.length > 1 && (
                       <>
                         {modalCarouselIndex > 0 && (

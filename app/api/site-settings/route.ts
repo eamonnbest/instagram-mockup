@@ -45,6 +45,8 @@ const ALLOWED_KEYS = [
   "instagram_posts_count",
   "instagram_avatar",
   "instagram_is_verified",
+  "dm_style_examples",
+  "dm_style_rules",
 ]
 
 export async function POST(request: NextRequest) {

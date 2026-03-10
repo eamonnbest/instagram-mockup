@@ -120,6 +120,9 @@ export default function AdsPage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/dms" className="text-sm font-medium hover:opacity-70">
+              DMs
+            </Link>
             <Link href="/calendar" className="text-sm font-medium hover:opacity-70">
               Schedule
             </Link>

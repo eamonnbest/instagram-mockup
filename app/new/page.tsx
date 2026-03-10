@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from "react"
 import Image from "next/image"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type } from "lucide-react"
+import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type, Play } from "lucide-react"
 import dynamic from "next/dynamic"
 import type { CanvasBlock, TextOverlayEditorHandle } from "@/components/text-overlay-editor"
 import { templates, hydrateTemplate } from "@/lib/templates"
@@ -33,6 +33,12 @@ const REALISM_CHIPS = [
   { id: "disposable", label: "Disposable", prompt: "subtle film texture, slightly muted colors, do not over-stylize or add heavy grain" },
   { id: "raw-photo", label: "Raw photo", prompt: "do not color correct, do not enhance lighting, do not sharpen, keep the image as-is with natural imperfections" },
 ] as const
+
+function isVideoUrl(url: string): boolean {
+  const lower = url.toLowerCase()
+  return lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".webm") ||
+    lower.includes(".mp4?") || lower.includes(".mov?") || lower.includes(".webm?")
+}
 
 function NewPostPage() {
   const router = useRouter()
@@ -561,7 +567,11 @@ function NewPostPage() {
             <>
             {/* Carousel viewer */}
             <div className="aspect-square max-w-md mx-auto relative bg-neutral-100 rounded-lg overflow-hidden">
-              <Image src={carouselImages[carouselIndex] || selectedImage} alt="Selected" fill className="object-cover" unoptimized />
+              {isVideoUrl(carouselImages[carouselIndex] || selectedImage || "") ? (
+                <video src={carouselImages[carouselIndex] || selectedImage || ""} controls playsInline className="w-full h-full object-cover" />
+              ) : (
+                <Image src={carouselImages[carouselIndex] || selectedImage} alt="Selected" fill className="object-cover" unoptimized />
+              )}
               {carouselImages.length > 1 && (
                 <>
                   {carouselIndex > 0 && (
@@ -613,7 +623,16 @@ function NewPostPage() {
                       i === carouselIndex ? "border-[#0095f6]" : "border-transparent"
                     }`}
                   >
-                    <Image src={img} alt="" width={56} height={56} className="w-full h-full object-cover" unoptimized />
+                    {isVideoUrl(img) ? (
+                      <>
+                        <video src={img} muted className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                          <Play className="w-4 h-4 text-white fill-white" />
+                        </div>
+                      </>
+                    ) : (
+                      <Image src={img} alt="" width={56} height={56} className="w-full h-full object-cover" unoptimized />
+                    )}
                   </button>
                   <button
                     onClick={() => removeCarouselImage(i)}
@@ -832,12 +851,12 @@ function NewPostPage() {
                     <div className="flex flex-col items-center gap-2 text-neutral-400">
                       <Upload className="w-8 h-8" />
                       <span className="text-sm">Click to choose a file</span>
-                      <span className="text-xs text-neutral-400">JPEG, PNG, WebP, GIF — max 5MB</span>
+                      <span className="text-xs text-neutral-400">JPEG, PNG, WebP, GIF, MP4, MOV, WebM</span>
                     </div>
                   )}
                   <input
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
                     className="hidden"
                     disabled={uploading}
                     onChange={(e) => {
