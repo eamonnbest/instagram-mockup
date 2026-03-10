@@ -1,6 +1,7 @@
 /**
- * Generates a JPEG thumbnail from the first frame of a video URL.
- * Seeks to 0.1s to avoid a black first frame, draws to canvas, uploads via signed URL.
+ * Generates a JPEG thumbnail from a video URL.
+ * Seeks to 25% of the video duration to avoid black intros/fades,
+ * draws to canvas, uploads via signed URL.
  */
 import { uploadViaSigned } from "@/lib/upload-signed"
 
@@ -18,8 +19,9 @@ export async function generateVideoThumbnail(videoUrl: string): Promise<string |
       video.onerror = () => reject(new Error("Failed to load video for thumbnail"))
     })
 
-    // Seek to 0.1s to skip potential black first frame
-    video.currentTime = 0.1
+    // Seek to 25% of duration to avoid black intros/fades
+    const seekTo = Math.min(video.duration * 0.25, video.duration - 0.1)
+    video.currentTime = Math.max(seekTo, 0.1)
     await new Promise<void>((resolve, reject) => {
       video.onseeked = () => resolve()
       // Timeout after 10s in case seek never completes
