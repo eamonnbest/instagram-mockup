@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from "react"
 import Image from "next/image"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type, Play } from "lucide-react"
+import { ChevronLeft, Link2, Loader2, Sparkles, RefreshCw, Check, Wand2, Plus, X, ChevronLeftIcon, ChevronRight, Copy, Upload, Type, Play, Music, Trash2, Scissors } from "lucide-react"
 import dynamic from "next/dynamic"
 import type { CanvasBlock, TextOverlayEditorHandle } from "@/components/text-overlay-editor"
 import { templates, hydrateTemplate } from "@/lib/templates"
@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
+import { uploadFileAction } from "@/lib/upload-action"
+import { AudioTrimmer } from "@/components/audio-trimmer"
 
 export default function NewPostPageWrapper() {
   return (
@@ -32,6 +34,17 @@ const REALISM_CHIPS = [
   { id: "phone-snap", label: "Phone snap", prompt: "natural photo, do not enhance or beautify, keep original lighting and skin texture, slight camera imperfections" },
   { id: "disposable", label: "Disposable", prompt: "subtle film texture, slightly muted colors, do not over-stylize or add heavy grain" },
   { id: "raw-photo", label: "Raw photo", prompt: "do not color correct, do not enhance lighting, do not sharpen, keep the image as-is with natural imperfections" },
+] as const
+
+const MUSIC_STYLES = [
+  { id: "indie", label: "Indie", prompt: "indie rock, raw guitar tones, slightly lo-fi production, authentic and unpolished feel, not corporate or stock-music sounding" },
+  { id: "lo-fi", label: "Lo-fi", prompt: "lo-fi hip hop, warm vinyl crackle, mellow piano chords, relaxed dusty beats, bedroom producer aesthetic" },
+  { id: "acoustic", label: "Acoustic", prompt: "acoustic guitar, intimate and stripped back, fingerpicked, warm and natural recording, singer-songwriter feel" },
+  { id: "electronic", label: "Electronic", prompt: "electronic, warm analog synths, textured pads, subtle glitch elements, not generic EDM, more like Tycho or Bonobo" },
+  { id: "cinematic", label: "Cinematic", prompt: "cinematic ambient, slow build, atmospheric textures, emotional piano, not cheesy trailer music, more like Olafur Arnalds" },
+  { id: "punk", label: "Punk/Raw", prompt: "punk energy, raw distorted guitars, fast drums, DIY recording quality, aggressive and authentic" },
+  { id: "soul", label: "Soul/R&B", prompt: "neo-soul, warm keys, smooth bass, organic drums, vintage feel, like a late night session recording" },
+  { id: "ambient", label: "Ambient", prompt: "ambient, slow evolving textures, reverb-drenched, spacious and meditative, not new age, more like Brian Eno" },
 ] as const
 
 function isVideoUrl(url: string): boolean {
@@ -79,6 +92,15 @@ function NewPostPage() {
   const [originalImageUrls, setOriginalImageUrls] = useState<string[]>([])
   const [generatingTemplate, setGeneratingTemplate] = useState(false)
   const [activeRealismChips, setActiveRealismChips] = useState<Set<string>>(new Set())
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [musicPrompt, setMusicPrompt] = useState("")
+  const [musicDuration, setMusicDuration] = useState(30)
+  const [musicInstrumental, setMusicInstrumental] = useState(true)
+  const [generatingMusic, setGeneratingMusic] = useState(false)
+  const [showMusic, setShowMusic] = useState(false)
+  const [activeMusicStyles, setActiveMusicStyles] = useState<Set<string>>(new Set())
+  const [trimming, setTrimming] = useState(false)
+  const [generatingMusicPrompt, setGeneratingMusicPrompt] = useState(false)
 
   function toggleRealismChip(chipId: string) {
     const chip = REALISM_CHIPS.find((c) => c.id === chipId)
@@ -132,6 +154,7 @@ function NewPostPage() {
           setSelectedImage(images[0] || null)
           setCarouselImages(images)
           setCaption(post.caption || "")
+          if (post.audio_url) setAudioUrl(post.audio_url)
           // Restore overlay blocks if saved (stored as { "0": [...], "1": [...] })
           if (post.overlay_blocks && typeof post.overlay_blocks === "object") {
             const blocksMap: Record<number, CanvasBlock[]> = {}
@@ -317,28 +340,14 @@ function NewPostPage() {
     try {
       const formData = new FormData()
       formData.append("file", file)
-      const res = await fetch("/api/instagram/upload", {
-        method: "POST",
-        body: formData,
-      })
-      if (!res.ok) {
-        let message = "Upload failed"
-        try {
-          const errData = await res.json()
-          message = errData.error || message
-        } catch {
-          // not JSON
-        }
-        throw new Error(message)
-      }
-      const data = await res.json()
+      const { url } = await uploadFileAction(formData)
       if (addingMore) {
-        setCarouselImages((prev) => [...prev, data.imageUrl])
+        setCarouselImages((prev) => [...prev, url])
         setCarouselIndex(carouselImages.length)
         setAddingMore(false)
       } else {
-        setSelectedImage(data.imageUrl)
-        setCarouselImages([data.imageUrl])
+        setSelectedImage(url)
+        setCarouselImages([url])
         setCarouselIndex(0)
       }
     } catch (error) {
@@ -458,6 +467,7 @@ function NewPostPage() {
                 carousel_images: finalImages.length > 1 ? finalImages : [],
                 overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
+                audio_url: audioUrl,
               }
             : {
                 image_url: finalImages[0] || finalSelectedImage,
@@ -467,6 +477,7 @@ function NewPostPage() {
                 carousel_images: finalImages.length > 1 ? finalImages : [],
                 overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
+                audio_url: audioUrl,
               }
         ),
       })
@@ -748,6 +759,201 @@ function NewPostPage() {
                           </button>
                         ))}
                       </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Music */}
+              <div className="mt-4 border border-neutral-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setShowMusic(!showMusic)}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
+                >
+                  <Music className="w-4 h-4" />
+                  {audioUrl ? "Music added" : "Add music"}
+                  {audioUrl && <span className="ml-auto text-xs text-emerald-600">●</span>}
+                </button>
+
+                {showMusic && (
+                  <div className="px-3 pb-3 border-t border-neutral-100 pt-3 space-y-3">
+                    {audioUrl ? (
+                      <div className="space-y-2">
+                        {trimming ? (
+                          <AudioTrimmer
+                            audioUrl={audioUrl}
+                            onSave={(newUrl) => {
+                              setAudioUrl(newUrl)
+                              setTrimming(false)
+                            }}
+                            onCancel={() => setTrimming(false)}
+                          />
+                        ) : (
+                          <>
+                            <audio src={audioUrl} controls className="w-full h-10" />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 text-xs"
+                                onClick={() => setTrimming(true)}
+                              >
+                                <Scissors className="w-3.5 h-3.5 mr-1" />
+                                Trim
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 text-xs"
+                                onClick={() => setAudioUrl(null)}
+                              >
+                                <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                                Remix
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 text-xs"
+                                onClick={() => {
+                                  setAudioUrl(null)
+                                  setMusicPrompt("")
+                                }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5 mr-1" />
+                                Remove
+                              </Button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap gap-1.5">
+                          {MUSIC_STYLES.map((style) => (
+                            <button
+                              key={style.id}
+                              onClick={() => {
+                                const next = new Set(activeMusicStyles)
+                                if (next.has(style.id)) next.delete(style.id)
+                                else next.add(style.id)
+                                setActiveMusicStyles(next)
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                                activeMusicStyles.has(style.id)
+                                  ? "bg-neutral-900 text-white"
+                                  : "bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-400"
+                              }`}
+                            >
+                              {style.label}
+                            </button>
+                          ))}
+                        </div>
+                        <Textarea
+                          value={musicPrompt}
+                          onChange={(e) => setMusicPrompt(e.target.value)}
+                          placeholder="Add details... e.g. 'upbeat energy, good for a product launch video'"
+                          className="min-h-[60px] text-sm resize-none"
+                        />
+                        <button
+                          onClick={async () => {
+                            setGeneratingMusicPrompt(true)
+                            try {
+                              const selectedStyles = MUSIC_STYLES.filter((s) => activeMusicStyles.has(s.id)).map((s) => s.label)
+                              const res = await fetch("/api/instagram/music-prompt", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ description: musicPrompt, styles: selectedStyles }),
+                              })
+                              if (!res.ok) throw new Error("Failed to generate prompt")
+                              const data = await res.json()
+                              setMusicPrompt(data.prompt)
+                            } catch {
+                              alert("Failed to generate music prompt")
+                            } finally {
+                              setGeneratingMusicPrompt(false)
+                            }
+                          }}
+                          disabled={generatingMusicPrompt || (!musicPrompt.trim() && activeMusicStyles.size === 0)}
+                          className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-700 disabled:opacity-40"
+                        >
+                          {generatingMusicPrompt ? (
+                            <><Loader2 className="w-3 h-3 animate-spin" />Writing prompt...</>
+                          ) : (
+                            <><Wand2 className="w-3 h-3" />Help me write a better prompt</>
+                          )}
+                        </button>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 flex-1">
+                            <label className="text-xs text-neutral-500 whitespace-nowrap">Duration</label>
+                            <select
+                              value={musicDuration}
+                              onChange={(e) => setMusicDuration(Number(e.target.value))}
+                              className="text-xs border border-neutral-200 rounded-md px-2 py-1.5 bg-white"
+                            >
+                              <option value={10}>10s</option>
+                              <option value={15}>15s</option>
+                              <option value={30}>30s</option>
+                              <option value={60}>1 min</option>
+                              <option value={120}>2 min</option>
+                              <option value={180}>3 min</option>
+                              <option value={300}>5 min</option>
+                            </select>
+                          </div>
+                          <label className="flex items-center gap-1.5 text-xs text-neutral-600 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={musicInstrumental}
+                              onChange={(e) => setMusicInstrumental(e.target.checked)}
+                              className="rounded"
+                            />
+                            Instrumental
+                          </label>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={async () => {
+                            const styleParts = MUSIC_STYLES.filter((s) => activeMusicStyles.has(s.id)).map((s) => s.prompt)
+                            const fullPrompt = [...styleParts, musicPrompt.trim()].filter(Boolean).join(". ")
+                            if (!fullPrompt) return
+                            setGeneratingMusic(true)
+                            try {
+                              const res = await fetch("/api/instagram/music", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  prompt: fullPrompt,
+                                  duration_seconds: musicDuration,
+                                  instrumental: musicInstrumental,
+                                }),
+                              })
+                              if (!res.ok) {
+                                const err = await res.json().catch(() => ({}))
+                                throw new Error(err.error || "Music generation failed")
+                              }
+                              const data = await res.json()
+                              setAudioUrl(data.audioUrl)
+                            } catch (error) {
+                              alert(error instanceof Error ? error.message : "Music generation failed")
+                            } finally {
+                              setGeneratingMusic(false)
+                            }
+                          }}
+                          disabled={generatingMusic || (!musicPrompt.trim() && activeMusicStyles.size === 0)}
+                          className="w-full"
+                        >
+                          {generatingMusic ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                              Generating music...
+                            </>
+                          ) : (
+                            <>
+                              <Music className="w-3.5 h-3.5 mr-1.5" />
+                              Generate Music
+                            </>
+                          )}
+                        </Button>
+                      </>
                     )}
                   </div>
                 )}

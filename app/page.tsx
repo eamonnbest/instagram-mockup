@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import {
@@ -73,6 +73,7 @@ interface InstagramPost {
   carousel_images: string[]
   scheduled_for: string | null
   status: "draft" | "approved" | "rejected"
+  audio_url: string | null
 }
 
 interface NoteEntry {
@@ -284,6 +285,7 @@ export default function InstagramPage() {
     isVerified: false,
   })
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null)
+  const modalAudioRef = useRef<HTMLAudioElement | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editCaption, setEditCaption] = useState("")
@@ -988,6 +990,9 @@ export default function InstagramPage() {
                           controls
                           playsInline
                           className="w-full h-full object-contain"
+                          onPlay={() => { const a = modalAudioRef.current; if (a) { a.currentTime = 0; a.play() } }}
+                          onPause={() => { modalAudioRef.current?.pause() }}
+                          onEnded={() => { modalAudioRef.current?.pause() }}
                         />
                       ) : (
                         <Image
@@ -1112,6 +1117,17 @@ export default function InstagramPage() {
                     </>
                   )}
                 </div>
+
+                {/* Audio — visible player for image posts, hidden for video (synced to video playback) */}
+                {selectedPost.audio_url && (
+                  currentModalImg && isVideoUrl(currentModalImg) ? (
+                    <audio ref={modalAudioRef} src={selectedPost.audio_url} preload="auto" className="hidden" />
+                  ) : (
+                    <div className="px-3 py-2 border-t border-neutral-100">
+                      <audio src={selectedPost.audio_url} controls className="w-full h-8" />
+                    </div>
+                  )
+                )}
 
                 {/* Chat */}
                 <div className="px-3 py-2 border-t border-neutral-100">
@@ -1251,9 +1267,11 @@ export default function InstagramPage() {
                       <video
                         src={currentModalImg}
                         controls
-                        autoPlay
                         playsInline
                         className="w-full h-full object-contain"
+                        onPlay={() => { const a = modalAudioRef.current; if (a) { a.currentTime = 0; a.play() } }}
+                        onPause={() => { modalAudioRef.current?.pause() }}
+                        onEnded={() => { modalAudioRef.current?.pause() }}
                       />
                     ) : (
                       <Image
@@ -1358,6 +1376,17 @@ export default function InstagramPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Audio — visible player for image posts, hidden for video (synced to video playback) */}
+                {selectedPost.audio_url && (
+                  currentModalImg && isVideoUrl(currentModalImg) ? (
+                    <audio ref={modalAudioRef} src={selectedPost.audio_url} preload="auto" className="hidden" />
+                  ) : (
+                    <div className="border-t border-neutral-200 px-3 py-2">
+                      <audio src={selectedPost.audio_url} controls className="w-full h-8" />
+                    </div>
+                  )
+                )}
 
                 {/* Chat */}
                 <div className="border-t border-neutral-200 p-3">
