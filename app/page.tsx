@@ -57,6 +57,18 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { extractColors } from "@/lib/extract-colors"
 
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint - 1}px)`)
+    setIsMobile(mql.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mql.addEventListener("change", handler)
+    return () => mql.removeEventListener("change", handler)
+  }, [breakpoint])
+  return isMobile
+}
+
 function isVideoUrl(url: string): boolean {
   const ext = url.split("?")[0].split(".").pop()?.toLowerCase()
   return ["mp4", "mov", "webm"].includes(ext || "")
@@ -286,6 +298,7 @@ export default function InstagramPage() {
     avatarUrl: null,
     isVerified: false,
   })
+  const isMobile = useIsMobile()
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null)
   const modalAudioRef = useRef<HTMLAudioElement | null>(null)
   const [muxing, setMuxing] = useState(false)
@@ -997,9 +1010,8 @@ export default function InstagramPage() {
               : selectedPost.image_url ? [selectedPost.image_url] : []
             const currentModalImg = modalImages[modalCarouselIndex] || null
             return (
-            <>
-            {/* ===== MOBILE LAYOUT ===== */}
-            <div className="flex flex-col h-[100dvh] md:hidden">
+            /* ===== MOBILE LAYOUT ===== */
+            isMobile ? <div className="flex flex-col h-[100dvh]">
               {/* Mobile header bar */}
               <div className="flex items-center gap-3 px-4 py-2.5 border-b border-neutral-200 flex-shrink-0">
                 <button onClick={() => setSelectedPost(null)}>
@@ -1320,8 +1332,8 @@ export default function InstagramPage() {
               </div>
             </div>
 
-            {/* ===== DESKTOP LAYOUT ===== */}
-            <div className="hidden md:flex md:flex-row h-auto md:h-[90vh] md:max-h-[600px]">
+            : /* ===== DESKTOP LAYOUT ===== */
+            <div className="flex flex-row h-[90vh] max-h-[600px]">
               {/* Left: Square image / carousel */}
               <div className="relative w-[600px] aspect-square flex-shrink-0 bg-black">
                 {currentModalImg ? (
@@ -1652,7 +1664,6 @@ export default function InstagramPage() {
                 </div>
               </div>
             </div>
-            </>
             )
           })()}
         </DialogContent>
