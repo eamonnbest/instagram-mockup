@@ -371,8 +371,8 @@ export default function InstagramPage() {
           }
         }
 
-        // Generate thumbnail if missing
-        if (!post.thumbnail_url) {
+        // Generate or regenerate thumbnail
+        {
           try {
             setMigrateStatus(`Generating thumbnail ${i + 1}/${videoPosts.length}...`)
             const videoSrc = (updates.image_url as string) || post.image_url!
@@ -974,7 +974,7 @@ export default function InstagramPage() {
                   <GripVertical className="w-3.5 h-3.5 mr-1.5" />
                   {isReordering ? "Done" : "Rearrange"}
                 </Button>
-                {posts.some((p) => p.image_url && isVideoUrl(p.image_url) && (p.audio_url || !p.thumbnail_url)) && (
+                {posts.some((p) => p.image_url && isVideoUrl(p.image_url)) && (
                   <Button
                     size="sm"
                     variant="outline"
