@@ -42,11 +42,11 @@ const MUSIC_STYLES = [
   { id: "indie", label: "Indie", prompt: "indie rock, raw guitar tones, slightly lo-fi production, authentic and unpolished feel, not corporate or stock-music sounding" },
   { id: "lo-fi", label: "Lo-fi", prompt: "lo-fi hip hop, warm vinyl crackle, mellow piano chords, relaxed dusty beats, bedroom producer aesthetic" },
   { id: "acoustic", label: "Acoustic", prompt: "acoustic guitar, intimate and stripped back, fingerpicked, warm and natural recording, singer-songwriter feel" },
-  { id: "electronic", label: "Electronic", prompt: "electronic, warm analog synths, textured pads, subtle glitch elements, not generic EDM, more like Tycho or Bonobo" },
-  { id: "cinematic", label: "Cinematic", prompt: "cinematic ambient, slow build, atmospheric textures, emotional piano, not cheesy trailer music, more like Olafur Arnalds" },
+  { id: "electronic", label: "Electronic", prompt: "electronic, warm analog synths, textured pads, subtle glitch elements, not generic EDM, downtempo and organic" },
+  { id: "cinematic", label: "Cinematic", prompt: "cinematic ambient, slow build, atmospheric textures, emotional piano, not cheesy trailer music, minimalist neoclassical" },
   { id: "punk", label: "Punk/Raw", prompt: "punk energy, raw distorted guitars, fast drums, DIY recording quality, aggressive and authentic" },
   { id: "soul", label: "Soul/R&B", prompt: "neo-soul, warm keys, smooth bass, organic drums, vintage feel, like a late night session recording" },
-  { id: "ambient", label: "Ambient", prompt: "ambient, slow evolving textures, reverb-drenched, spacious and meditative, not new age, more like Brian Eno" },
+  { id: "ambient", label: "Ambient", prompt: "ambient, slow evolving textures, reverb-drenched, spacious and meditative, not new age, generative and minimal" },
 ] as const
 
 function isVideoUrl(url: string): boolean {
