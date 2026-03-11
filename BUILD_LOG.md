@@ -1,5 +1,73 @@
 # Build Log
 
+## Session: 2026-03-11 — Mobile fixes, music ToS fix, audio fade, image→reel mux
+
+### Completed (committed, pushed)
+
+**ElevenLabs fix (`e507d5f`):**
+- Env vars were missing on Vercel (user added them via dashboard)
+- Removed artist name references (Tycho, Bonobo, Olafur Arnalds, Brian Eno) from music style prompts — ElevenLabs ToS filter was rejecting them
+
+**Audio fade-out (`76d3543`, `8a0ea05`):**
+- Audio trimmer: 2s linear fade-out when clip is trimmed before natural end (Web Audio GainNode)
+- Video mux: 2s FFmpeg `afade` filter at mux time when audio is longer than video
+- `muxVideoAudio` accepts optional `videoDuration` param; callers pass it from state or probe via `<video>` element
+
+**Mobile fixes (`622a13c`):**
+- Image cropper: responsive sizing via ResizeObserver (fits 375px phone screens, max 600px)
+- Image cropper: pinch-to-zoom with ref-based Konva updates (60fps, disables drag during pinch, guards against NaN/stale closures, handles touchcancel)
+- Audio trimmer: deferred AudioContext creation to user gesture for iOS Safari (fetch on mount, decode on first tap via `ensureDecodedSync`)
+- Carousel nav buttons: 32px → 44px touch targets
+- `useIsMobile`: added `(max-height: 500px)` to catch phones in landscape
+- Grid videos: `preload="none"` on mobile (passed `isMobile` as prop to `SortablePost`)
+
+**Still image + audio → video reel (`a975d0c`):**
+- New `muxImageAudio()` in `lib/mux-video.ts` — FFmpeg `-loop 1` + libx264 creates MP4 from static image + audio
+- Save flow in `/new` page detects still image + audio and auto-muxes into video (like Instagram reels)
+- Falls back to separate audio if mux fails
+
+### Code Review Results
+- Image cropper responsive sizing: passed (no bugs)
+- Pinch-to-zoom v1: 6 bugs found (NaN, stale closure, drag conflict, missing touchcancel, preventDefault placement, re-render spam)
+- Pinch-to-zoom v2 (ref-based rewrite): all 6 fixed, 1 new issue (ref overwrite during pinch if re-render) — fixed with `isPinching` guard
+- AudioContext iOS fix v1: 2 bugs found (audio.play() loses gesture context after await, double-tap race)
+- AudioContext iOS fix v2 (sync approach): fixed both — `ensureDecodedSync` keeps AudioContext creation in gesture stack
+- Carousel buttons, useIsMobile, video preload: passed (preload had scoping bug — `isMobile` not in `SortablePost` — fixed by passing as prop)
+
+### Key Learnings
+- ElevenLabs ToS filter rejects prompts with real artist names
+- iOS Safari requires AudioContext creation in synchronous gesture stack — `await` before `audio.play()` breaks it
+- Konva drag + pinch conflict: must disable `draggable` during two-finger gesture
+- Ref-based Konva updates during gesture (bypass React state) = smooth 60fps pinch
+- `ResizeObserver` on outer container + explicit size on inner canvas = no re-render loops
+- FFmpeg.wasm supports `libx264` for image→video encoding (slower than stream copy but works)
+
+### What's NOT Done
+- `isVideoUrl()` still duplicated in `page.tsx` and `new/page.tsx`
+- "scheduled ago" text bug still present
+- No auth on API routes (by design)
+- Image→reel mux not yet tested on deployed Vercel (just pushed)
+- Existing dog photo post needs edit+resave to trigger mux (user will do manually)
+- Audio trimmer range inputs still small on mobile (review flagged, not yet fixed)
+- FFmpeg 25MB download has no progress indicator on mobile
+- iOS Safari URL bar shift can offset modal centering
+
+### Git Commits
+- `e507d5f` — Remove artist names from music prompts (ElevenLabs ToS fix)
+- `76d3543` — Auto fade-out when audio trimmed before natural end
+- `8a0ea05` — 2s audio fade-out at mux time
+- `622a13c` — Mobile fixes (cropper, pinch, iOS audio, buttons, landscape, preload)
+- `a975d0c` — Still image + audio → video mux (reel behavior)
+
+### Next Steps
+- Test image→reel mux: edit the Big Norm dog photo post and resave
+- Test pinch-to-zoom on real phone
+- Test audio trimmer first-tap on iOS
+- Consider better mobile range inputs for audio trimmer
+- Consider FFmpeg download progress indicator
+
+---
+
 ## Session: 2026-03-10 (night) — Mobile video performance & muxing
 
 ### Completed (committed, pushed)
