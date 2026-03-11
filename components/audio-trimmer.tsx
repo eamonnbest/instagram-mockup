@@ -155,7 +155,21 @@ export function AudioTrimmer({ audioUrl, onSave, onCancel }: AudioTrimmerProps) 
 
       const source = offlineCtx.createBufferSource()
       source.buffer = buffer
-      source.connect(offlineCtx.destination)
+
+      // Auto fade-out if trimmed before the track's natural end
+      const isTrimmedEnd = endTime < buffer.duration - 0.1
+      if (isTrimmedEnd) {
+        const gainNode = offlineCtx.createGain()
+        const fadeDuration = Math.min(2, endTime - startTime) // 2s fade, or clip length if shorter
+        gainNode.gain.setValueAtTime(1, 0)
+        gainNode.gain.setValueAtTime(1, Math.max(0, (endTime - startTime) - fadeDuration))
+        gainNode.gain.linearRampToValueAtTime(0, endTime - startTime)
+        source.connect(gainNode)
+        gainNode.connect(offlineCtx.destination)
+      } else {
+        source.connect(offlineCtx.destination)
+      }
+
       source.start(0, startTime, endTime - startTime)
 
       const rendered = await offlineCtx.startRendering()
