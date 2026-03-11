@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { ZoomIn, ZoomOut, Check, X } from "lucide-react"
 
 const EXPORT_SIZE = 1080  // Final exported image size
-const DISPLAY_SIZE = 600  // On-screen canvas size
+const MAX_DISPLAY_SIZE = 600  // Max on-screen canvas size
 
 interface ImageCropperProps {
   imageUrl: string
@@ -20,9 +20,41 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
   const [scale, setScale] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [baseSize, setBaseSize] = useState({ w: 0, h: 0 })
+  const [displaySize, setDisplaySize] = useState(MAX_DISPLAY_SIZE)
   const stageRef = useRef<Konva.Stage>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const pinchRef = useRef<{ lastDist: number; startScale: number; isPinching: boolean }>({
+    lastDist: 0, startScale: 1, isPinching: false,
+  })
+  const scaleRef = useRef(scale)
+  const positionRef = useRef(position)
+  if (!pinchRef.current.isPinching) {
+    scaleRef.current = scale
+    positionRef.current = position
+  }
 
-  // Load the image
+  // Handle touchcancel (notifications, interruptions) — Konva has no onTouchCancel prop
+  useEffect(() => {
+    const canvas = stageRef.current?.container()
+    if (!canvas) return
+    const onCancel = () => handlePinchEnd()
+    canvas.addEventListener("touchcancel", onCancel)
+    return () => canvas.removeEventListener("touchcancel", onCancel)
+  })
+
+  // Responsive display size via ResizeObserver
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? MAX_DISPLAY_SIZE
+      setDisplaySize(Math.min(Math.floor(width), MAX_DISPLAY_SIZE))
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // Load the image and compute initial layout
   useEffect(() => {
     const img = new window.Image()
     img.crossOrigin = "anonymous"
@@ -34,28 +66,28 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
       // Base size = contain fit (entire image visible inside the display square)
       let baseW: number, baseH: number
       if (imgRatio > 1) {
-        baseW = DISPLAY_SIZE
-        baseH = DISPLAY_SIZE / imgRatio
+        baseW = displaySize
+        baseH = displaySize / imgRatio
       } else {
-        baseH = DISPLAY_SIZE
-        baseW = DISPLAY_SIZE * imgRatio
+        baseH = displaySize
+        baseW = displaySize * imgRatio
       }
 
       setBaseSize({ w: baseW, h: baseH })
 
       // Start at cover fit (fills the square, no black bars)
-      const coverScale = Math.max(DISPLAY_SIZE / baseW, DISPLAY_SIZE / baseH)
+      const coverScale = Math.max(displaySize / baseW, displaySize / baseH)
 
       const scaledW = baseW * coverScale
       const scaledH = baseH * coverScale
-      const startX = -(scaledW - DISPLAY_SIZE) / 2
-      const startY = -(scaledH - DISPLAY_SIZE) / 2
+      const startX = -(scaledW - displaySize) / 2
+      const startY = -(scaledH - displaySize) / 2
 
       setScale(coverScale)
       setPosition({ x: startX, y: startY })
     }
     img.src = imageUrl
-  }, [imageUrl])
+  }, [imageUrl, displaySize])
 
   // Constrain position
   const constrainPosition = useCallback((x: number, y: number, s: number, bw: number, bh: number) => {
@@ -64,20 +96,20 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
 
     let cx: number, cy: number
 
-    if (scaledW >= DISPLAY_SIZE) {
-      cx = Math.min(0, Math.max(DISPLAY_SIZE - scaledW, x))
+    if (scaledW >= displaySize) {
+      cx = Math.min(0, Math.max(displaySize - scaledW, x))
     } else {
-      cx = (DISPLAY_SIZE - scaledW) / 2
+      cx = (displaySize - scaledW) / 2
     }
 
-    if (scaledH >= DISPLAY_SIZE) {
-      cy = Math.min(0, Math.max(DISPLAY_SIZE - scaledH, y))
+    if (scaledH >= displaySize) {
+      cy = Math.min(0, Math.max(displaySize - scaledH, y))
     } else {
-      cy = (DISPLAY_SIZE - scaledH) / 2
+      cy = (displaySize - scaledH) / 2
     }
 
     return { x: cx, y: cy }
-  }, [])
+  }, [displaySize])
 
   function handleDragEnd(e: Konva.KonvaEventObject<DragEvent>) {
     const node = e.target
@@ -95,8 +127,8 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
   function handleZoom(newScale: number) {
     const s = Math.max(1, Math.min(4, newScale))
 
-    const centerX = DISPLAY_SIZE / 2
-    const centerY = DISPLAY_SIZE / 2
+    const centerX = displaySize / 2
+    const centerY = displaySize / 2
 
     const newX = centerX - ((centerX - position.x) / scale) * s
     const newY = centerY - ((centerY - position.y) / scale) * s
@@ -112,16 +144,79 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
     handleZoom(scale + delta)
   }
 
+  function getTouchDist(touches: TouchList): number {
+    return Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY,
+    )
+  }
+
+  function handleTouchStart(e: Konva.KonvaEventObject<TouchEvent>) {
+    const touches = e.evt.touches
+    if (touches.length >= 2) {
+      e.evt.preventDefault()
+      const dist = getTouchDist(touches)
+      if (dist < 1) return // Fingers overlapping — ignore
+      pinchRef.current = { lastDist: dist, startScale: scaleRef.current, isPinching: true }
+      // Disable Konva drag during pinch
+      const imageNode = stageRef.current?.findOne("Image")
+      if (imageNode) imageNode.draggable(false)
+    }
+  }
+
+  function handleTouchMove(e: Konva.KonvaEventObject<TouchEvent>) {
+    const touches = e.evt.touches
+    if (touches.length < 2 || !pinchRef.current.isPinching) return
+    e.evt.preventDefault()
+
+    const dist = getTouchDist(touches)
+    if (dist < 1) return // Guard against zero distance
+
+    const ratio = dist / pinchRef.current.lastDist
+    const newScale = Math.max(1, Math.min(4, scaleRef.current * ratio))
+
+    // Update Konva node directly for smooth 60fps (no React re-render per frame)
+    const imageNode = stageRef.current?.findOne("Image") as Konva.Image | undefined
+    if (imageNode) {
+      const centerX = displaySize / 2
+      const centerY = displaySize / 2
+      const newX = centerX - ((centerX - positionRef.current.x) / scaleRef.current) * newScale
+      const newY = centerY - ((centerY - positionRef.current.y) / scaleRef.current) * newScale
+      const constrained = constrainPosition(newX, newY, newScale, baseSize.w, baseSize.h)
+
+      imageNode.scaleX(newScale)
+      imageNode.scaleY(newScale)
+      imageNode.position(constrained)
+      imageNode.getLayer()?.batchDraw()
+
+      scaleRef.current = newScale
+      positionRef.current = constrained
+    }
+
+    pinchRef.current.lastDist = dist
+  }
+
+  function handlePinchEnd() {
+    if (!pinchRef.current.isPinching) return
+    pinchRef.current.isPinching = false
+    // Re-enable Konva drag
+    const imageNode = stageRef.current?.findOne("Image")
+    if (imageNode) imageNode.draggable(true)
+    // Sync refs back to React state (single re-render)
+    setScale(scaleRef.current)
+    setPosition(positionRef.current)
+  }
+
   function applyCrop() {
     if (!stageRef.current) return
 
     // Export at high resolution (EXPORT_SIZE x EXPORT_SIZE)
-    const ratio = EXPORT_SIZE / DISPLAY_SIZE
+    const ratio = EXPORT_SIZE / displaySize
     const dataUrl = stageRef.current.toDataURL({
       x: 0,
       y: 0,
-      width: DISPLAY_SIZE,
-      height: DISPLAY_SIZE,
+      width: displaySize,
+      height: displaySize,
       pixelRatio: ratio,
     })
 
@@ -131,7 +226,7 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
   const isSquare = image && Math.abs(image.naturalWidth - image.naturalHeight) < 2
 
   const coverScale = baseSize.w > 0 && baseSize.h > 0
-    ? Math.max(DISPLAY_SIZE / baseSize.w, DISPLAY_SIZE / baseSize.h)
+    ? Math.max(displaySize / baseSize.w, displaySize / baseSize.h)
     : 1
 
   return (
@@ -143,17 +238,21 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
         )}
       </div>
 
-      {/* Canvas */}
-      <div
-        className="mx-auto rounded-lg overflow-hidden bg-neutral-900 cursor-grab active:cursor-grabbing"
-        style={{ width: DISPLAY_SIZE, height: DISPLAY_SIZE }}
-      >
-        <Stage
-          ref={stageRef}
-          width={DISPLAY_SIZE}
-          height={DISPLAY_SIZE}
-          onWheel={handleWheel}
+      {/* Canvas — container measures available width */}
+      <div ref={containerRef} className="w-full max-w-[600px] mx-auto">
+        <div
+          className="rounded-lg overflow-hidden bg-neutral-900 cursor-grab active:cursor-grabbing"
+          style={{ width: displaySize, height: displaySize, touchAction: "none" }}
         >
+          <Stage
+            ref={stageRef}
+            width={displaySize}
+            height={displaySize}
+            onWheel={handleWheel}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handlePinchEnd}
+          >
           <Layer>
             {image && (
               <KonvaImage
@@ -171,6 +270,7 @@ export function ImageCropper({ imageUrl, onCrop, onCancel }: ImageCropperProps) 
             )}
           </Layer>
         </Stage>
+        </div>
       </div>
 
       {/* Zoom slider */}

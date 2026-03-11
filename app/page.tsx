@@ -60,7 +60,9 @@ import { extractColors } from "@/lib/extract-colors"
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${breakpoint - 1}px)`)
+    // Narrow width OR short height (catches phones in landscape)
+    const query = `(max-width: ${breakpoint - 1}px), (max-height: 500px)`
+    const mql = window.matchMedia(query)
     setIsMobile(mql.matches)
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
     mql.addEventListener("change", handler)
@@ -195,11 +197,13 @@ function SortablePost({
   isReordering,
   onOpen,
   colors,
+  isMobile,
 }: {
   post: InstagramPost
   isReordering: boolean
   onOpen: (post: InstagramPost) => void
   colors?: string[]
+  isMobile: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: post.id })
 
@@ -220,7 +224,7 @@ function SortablePost({
         >
           {post.image_url ? (
             post.image_url && isVideoUrl(post.image_url) ? (
-              <video src={post.image_url} muted preload={post.thumbnail_url ? "none" : "metadata"} poster={post.thumbnail_url || undefined} className="w-full h-full object-cover" />
+              <video src={post.image_url} muted preload={isMobile || post.thumbnail_url ? "none" : "metadata"} poster={post.thumbnail_url || undefined} className="w-full h-full object-cover" />
             ) : (
               <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
             )
@@ -238,7 +242,7 @@ function SortablePost({
           {post.image_url ? (
             post.image_url && isVideoUrl(post.image_url) ? (
               <>
-                <video src={post.image_url} muted preload={post.thumbnail_url ? "none" : "metadata"} poster={post.thumbnail_url || undefined} className="w-full h-full object-cover" />
+                <video src={post.image_url} muted preload={isMobile || post.thumbnail_url ? "none" : "metadata"} poster={post.thumbnail_url || undefined} className="w-full h-full object-cover" />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
                     <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
@@ -998,7 +1002,7 @@ export default function InstagramPage() {
             <SortableContext items={filteredPosts.map((p) => p.id)} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-3 gap-1">
                 {filteredPosts.map((post) => (
-                  <SortablePost key={post.id} post={post} isReordering={isReordering} onOpen={openPost} colors={showPalette ? postColors[post.id] : undefined} />
+                  <SortablePost key={post.id} post={post} isReordering={isReordering} onOpen={openPost} colors={showPalette ? postColors[post.id] : undefined} isMobile={isMobile} />
                 ))}
               </div>
             </SortableContext>

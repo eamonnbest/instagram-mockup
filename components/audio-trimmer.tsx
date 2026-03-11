@@ -66,9 +66,10 @@ export function AudioTrimmer({ audioUrl, onSave, onCancel }: AudioTrimmerProps) 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioBufferRef = useRef<AudioBuffer | null>(null)
+  const rawAudioDataRef = useRef<ArrayBuffer | null>(null)
   const animFrameRef = useRef<number>(0)
 
-  // Load audio and decode
+  // Fetch audio data on mount (no AudioContext yet — iOS blocks it without gesture)
   useEffect(() => {
     const audio = new Audio()
     audio.crossOrigin = "anonymous"
@@ -80,23 +81,12 @@ export function AudioTrimmer({ audioUrl, onSave, onCancel }: AudioTrimmerProps) 
       setEndTime(audio.duration)
     })
 
-    // Decode for trimming
+    // Pre-fetch the raw bytes so decode is fast on first interaction
     fetch(audioUrl)
       .then((r) => r.arrayBuffer())
-      .then((buf) => {
-        const ctx = new AudioContext()
-        audioContextRef.current = ctx
-        return ctx.decodeAudioData(buf)
-      })
-      .then((decoded) => {
-        audioBufferRef.current = decoded
-        if (decoded.duration > 0) {
-          setDuration(decoded.duration)
-          setEndTime(decoded.duration)
-        }
-      })
+      .then((buf) => { rawAudioDataRef.current = buf })
       .catch((err) => {
-        console.error("Failed to decode audio:", err)
+        console.error("Failed to fetch audio:", err)
         setLoadError("Could not load audio for trimming. The file may not be accessible.")
       })
 
@@ -106,6 +96,41 @@ export function AudioTrimmer({ audioUrl, onSave, onCancel }: AudioTrimmerProps) 
       audioContextRef.current?.close()
     }
   }, [audioUrl])
+
+  const decodePromiseRef = useRef<Promise<AudioBuffer | null> | null>(null)
+
+  // Decode audio on first user gesture (iOS requires AudioContext inside a tap)
+  // AudioContext creation is synchronous (stays in gesture stack), decode is async
+  function ensureDecodedSync(): AudioBuffer | null {
+    if (audioBufferRef.current) return audioBufferRef.current
+    if (!rawAudioDataRef.current || decodePromiseRef.current) return null
+
+    // Create/resume AudioContext synchronously in gesture stack (required for iOS)
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext()
+    }
+    if (audioContextRef.current.state === "suspended") {
+      audioContextRef.current.resume()
+    }
+
+    // Kick off decode — store promise so saveClip can await it
+    decodePromiseRef.current = audioContextRef.current.decodeAudioData(rawAudioDataRef.current.slice(0))
+      .then((decoded) => {
+        audioBufferRef.current = decoded
+        if (decoded.duration > 0) {
+          setDuration(decoded.duration)
+          setEndTime(decoded.duration)
+        }
+        return decoded
+      })
+      .catch((err) => {
+        console.error("Failed to decode audio:", err)
+        setLoadError("Could not decode audio. The file may be corrupted.")
+        return null
+      })
+
+    return null
+  }
 
   const updatePlayhead = useCallback(() => {
     const audio = audioRef.current
@@ -130,6 +155,10 @@ export function AudioTrimmer({ audioUrl, onSave, onCancel }: AudioTrimmerProps) 
       return
     }
 
+    // Kick off decode if needed (synchronous AudioContext creation for iOS gesture)
+    ensureDecodedSync()
+
+    // audio.play() stays synchronous in the gesture stack
     audio.currentTime = startTime
     audio.play()
     setPlaying(true)
@@ -137,8 +166,18 @@ export function AudioTrimmer({ audioUrl, onSave, onCancel }: AudioTrimmerProps) 
   }
 
   async function saveClip() {
+    // Kick off decode synchronously (iOS gesture context)
+    ensureDecodedSync()
+
+    // Await decode if still in progress (saveClip doesn't need gesture context)
+    if (!audioBufferRef.current && decodePromiseRef.current) {
+      await decodePromiseRef.current
+    }
     const buffer = audioBufferRef.current
-    if (!buffer) return
+    if (!buffer) {
+      alert("Audio is still loading. Please try again.")
+      return
+    }
 
     setSaving(true)
     try {

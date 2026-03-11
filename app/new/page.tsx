@@ -691,7 +691,7 @@ function NewPostPage() {
                   {carouselIndex > 0 && (
                     <button
                       onClick={() => setCarouselIndex(carouselIndex - 1)}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
                     >
                       <ChevronLeftIcon className="w-5 h-5" />
                     </button>
@@ -699,7 +699,7 @@ function NewPostPage() {
                   {carouselIndex < carouselImages.length - 1 && (
                     <button
                       onClick={() => setCarouselIndex(carouselIndex + 1)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
                     >
                       <ChevronRight className="w-5 h-5" />
                     </button>
