@@ -31,6 +31,7 @@ export async function muxVideoAudio(
   videoUrl: string,
   audioUrl: string,
   onProgress?: (message: string) => void,
+  videoDuration?: number,
 ): Promise<Blob> {
   const ff = await getFFmpeg(onProgress)
 
@@ -42,19 +43,28 @@ export async function muxVideoAudio(
   await ff.writeFile(`input.${videoExt}`, await fetchFile(videoUrl))
   await ff.writeFile(`input.${audioExt}`, await fetchFile(audioUrl))
 
+  // 2s audio fade-out before the video ends (avoids hard chop from -shortest)
+  const fadeDuration = 2
+  const audioFilter = videoDuration && videoDuration > fadeDuration
+    ? `afade=t=out:st=${Math.max(0, videoDuration - fadeDuration).toFixed(2)}:d=${fadeDuration}`
+    : null
+
   // Mux: copy video stream, encode audio as AAC, trim audio to match video length
-  await ff.exec([
+  const args = [
     "-i", `input.${videoExt}`,
     "-i", `input.${audioExt}`,
     "-c:v", "copy",       // Don't re-encode video (fast)
     "-c:a", "aac",        // Encode audio as AAC for broad compatibility
     "-b:a", "192k",
+    ...(audioFilter ? ["-af", audioFilter] : []),
     "-shortest",          // Trim to whichever input is shorter
     "-map", "0:v:0",      // Take video from first input
     "-map", "1:a:0",      // Take audio from second input
     "-movflags", "+faststart", // Optimize for web playback
     "output.mp4",
-  ])
+  ]
+
+  await ff.exec(args)
 
   // Read the result
   const data = await ff.readFile("output.mp4") as Uint8Array

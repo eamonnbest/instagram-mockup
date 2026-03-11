@@ -476,7 +476,7 @@ function NewPostPage() {
       if (audioUrl && isVideoUrl(primaryImage)) {
         try {
           const { muxVideoAudio } = await import("@/lib/mux-video")
-          const muxedBlob = await muxVideoAudio(primaryImage, audioUrl)
+          const muxedBlob = await muxVideoAudio(primaryImage, audioUrl, undefined, videoDuration ?? undefined)
           const muxedFile = new File([muxedBlob], "muxed.mp4", { type: "video/mp4" })
           const { url: muxedUrl } = await uploadViaSigned(muxedFile)
           finalImages[0] = muxedUrl

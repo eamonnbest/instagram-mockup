@@ -427,8 +427,16 @@ export default function InstagramPage() {
     setMuxing(true)
     setMuxProgress("Loading FFmpeg...")
     try {
+      // Probe video duration for fade-out
+      const dur = await new Promise<number>((resolve) => {
+        const v = document.createElement("video")
+        v.preload = "metadata"
+        v.onloadedmetadata = () => resolve(v.duration)
+        v.onerror = () => resolve(0)
+        v.src = videoUrl
+      })
       const { muxVideoAudio } = await import("@/lib/mux-video")
-      const blob = await muxVideoAudio(videoUrl, audioUrl, (msg) => setMuxProgress(msg))
+      const blob = await muxVideoAudio(videoUrl, audioUrl, (msg) => setMuxProgress(msg), dur || undefined)
       // Trigger browser download
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
