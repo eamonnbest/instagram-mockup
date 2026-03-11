@@ -470,20 +470,31 @@ function NewPostPage() {
         : [...carouselImages]
       const finalSelectedImage = freshImage || carouselImages[0] || selectedImage
 
-      // If there's a video with audio, mux them into a single file
+      // If there's audio, mux it into the primary media (video or still image → video)
       let finalAudioUrl = audioUrl
       const primaryImage = finalImages[0] || finalSelectedImage
-      if (audioUrl && isVideoUrl(primaryImage)) {
+      if (audioUrl && primaryImage) {
         try {
-          const { muxVideoAudio } = await import("@/lib/mux-video")
-          const muxedBlob = await muxVideoAudio(primaryImage, audioUrl, undefined, videoDuration ?? undefined)
-          const muxedFile = new File([muxedBlob], "muxed.mp4", { type: "video/mp4" })
-          const { url: muxedUrl } = await uploadViaSigned(muxedFile)
-          finalImages[0] = muxedUrl
-          finalAudioUrl = null
+          if (isVideoUrl(primaryImage)) {
+            // Video + audio → mux into single MP4
+            const { muxVideoAudio } = await import("@/lib/mux-video")
+            const muxedBlob = await muxVideoAudio(primaryImage, audioUrl, undefined, videoDuration ?? undefined)
+            const muxedFile = new File([muxedBlob], "muxed.mp4", { type: "video/mp4" })
+            const { url: muxedUrl } = await uploadViaSigned(muxedFile)
+            finalImages[0] = muxedUrl
+            finalAudioUrl = null
+          } else {
+            // Still image + audio → create video from image (like Instagram reels)
+            const { muxImageAudio } = await import("@/lib/mux-video")
+            const muxedBlob = await muxImageAudio(primaryImage, audioUrl)
+            const muxedFile = new File([muxedBlob], "reel.mp4", { type: "video/mp4" })
+            const { url: muxedUrl } = await uploadViaSigned(muxedFile)
+            finalImages[0] = muxedUrl
+            finalAudioUrl = null
+          }
         } catch (muxErr) {
-          console.error("Failed to mux video+audio:", muxErr)
-          setPostError("Failed to combine video and audio. Saving without audio embedded.")
+          console.error("Failed to mux media+audio:", muxErr)
+          setPostError("Failed to combine media and audio. Saving with separate audio.")
           // Fall through — save with separate audio as fallback
         }
       }

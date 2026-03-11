@@ -78,3 +78,53 @@ export async function muxVideoAudio(
   const buffer = new Uint8Array(data).buffer as ArrayBuffer
   return new Blob([buffer], { type: "video/mp4" })
 }
+
+/**
+ * Combines a still image and audio into a video (like Instagram reels from photos).
+ * The image is displayed as a static frame for the duration of the audio.
+ */
+export async function muxImageAudio(
+  imageUrl: string,
+  audioUrl: string,
+  onProgress?: (message: string) => void,
+): Promise<Blob> {
+  const ff = await getFFmpeg(onProgress)
+
+  // Determine input extensions from URLs
+  const imageExt = imageUrl.match(/\.(jpg|jpeg|png|webp)/) ? imageUrl.match(/\.(jpg|jpeg|png|webp)/)![1] : "jpg"
+  const audioExt = audioUrl.match(/\.(mp3|wav|aac|m4a)/) ? audioUrl.match(/\.(mp3|wav|aac|m4a)/)![1] : "mp3"
+
+  // Write input files to FFmpeg's virtual filesystem
+  await ff.writeFile(`input.${imageExt}`, await fetchFile(imageUrl))
+  await ff.writeFile(`input.${audioExt}`, await fetchFile(audioUrl))
+
+  // Create video from still image + audio
+  // -loop 1: loop the image indefinitely (until -shortest stops it)
+  // -c:v libx264: encode as H.264 (can't copy since there's no video stream to copy)
+  // -tune stillimage: optimize encoding for a static frame
+  // -pix_fmt yuv420p: required for broad player compatibility
+  await ff.exec([
+    "-loop", "1",
+    "-i", `input.${imageExt}`,
+    "-i", `input.${audioExt}`,
+    "-c:v", "libx264",
+    "-tune", "stillimage",
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac",
+    "-b:a", "192k",
+    "-shortest",
+    "-movflags", "+faststart",
+    "output.mp4",
+  ])
+
+  // Read the result
+  const data = await ff.readFile("output.mp4") as Uint8Array
+
+  // Clean up virtual filesystem
+  await ff.deleteFile(`input.${imageExt}`).catch(() => {})
+  await ff.deleteFile(`input.${audioExt}`).catch(() => {})
+  await ff.deleteFile("output.mp4").catch(() => {})
+
+  const buffer = new Uint8Array(data).buffer as ArrayBuffer
+  return new Blob([buffer], { type: "video/mp4" })
+}
