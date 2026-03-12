@@ -215,7 +215,7 @@ function SortablePost({
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="aspect-square relative group overflow-hidden bg-neutral-100">
+    <div ref={setNodeRef} style={style} className="aspect-[3/4] relative group overflow-hidden bg-neutral-100">
       {isReordering ? (
         <button
           {...attributes}
@@ -938,7 +938,7 @@ export default function InstagramPage() {
         {loading ? (
           <div className="grid grid-cols-3 gap-1">
             {[...Array(9)].map((_, i) => (
-              <div key={i} className="aspect-square bg-neutral-100 animate-pulse" />
+              <div key={i} className="aspect-[3/4] bg-neutral-100 animate-pulse" />
             ))}
           </div>
         ) : posts.length === 0 ? (
@@ -981,7 +981,7 @@ export default function InstagramPage() {
                     {Array.from({ length: Math.max(cellCount, 15) }).map((_, i) => {
                       const post = filteredPosts[i]
                       return (
-                        <div key={post?.id ?? `empty-${i}`} className="aspect-square relative bg-white">
+                        <div key={post?.id ?? `empty-${i}`} className="aspect-[3/4] relative bg-white">
                           {post?.image_url && (
                             <Image src={post.image_url} alt="" fill sizes="66px" className="object-cover" unoptimized />
                           )}
@@ -1048,8 +1048,8 @@ export default function InstagramPage() {
 
               {/* Scrollable content */}
               <div className="flex-1 overflow-y-auto">
-                {/* Square image/video */}
-                <div className="relative w-full aspect-square bg-black">
+                {/* Image/video — native aspect ratio */}
+                <div className="relative w-full bg-black">
                   {currentModalImg ? (
                     <>
                       {isVideoUrl(currentModalImg) ? (
@@ -1057,20 +1057,17 @@ export default function InstagramPage() {
                           src={currentModalImg}
                           controls
                           playsInline
-                          className="w-full h-full object-contain"
+                          className="w-full object-contain"
                           onPlaying={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
                           onWaiting={() => { modalAudioRef.current?.pause() }}
                           onPause={() => { modalAudioRef.current?.pause() }}
                           onEnded={() => { modalAudioRef.current?.pause() }}
                         />
                       ) : (
-                        <Image
+                        <img
                           src={currentModalImg}
                           alt={selectedPost.caption || "Post"}
-                          fill
-                          sizes="100vw"
-                          className="object-cover"
-                          unoptimized
+                          className="w-full"
                         />
                       )}
                       {modalImages.length > 1 && (
@@ -1105,7 +1102,7 @@ export default function InstagramPage() {
                       )}
                     </>
                   ) : (
-                    <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
+                    <div className="w-full aspect-[3/4] bg-neutral-200 flex items-center justify-center">
                       <span className="text-neutral-400">No image</span>
                     </div>
                   )}
@@ -1346,9 +1343,9 @@ export default function InstagramPage() {
             </div>
 
             : /* ===== DESKTOP LAYOUT ===== */
-            <div className="flex flex-row h-[90vh] max-h-[600px]">
-              {/* Left: Square image / carousel */}
-              <div className="relative w-[600px] aspect-square flex-shrink-0 bg-black">
+            <div className="flex flex-row h-[90vh] max-h-[800px]">
+              {/* Left: image / carousel — native aspect ratio */}
+              <div className="relative w-[600px] flex-shrink-0 bg-black flex items-center justify-center">
                 {currentModalImg ? (
                   <>
                     {isVideoUrl(currentModalImg) ? (
@@ -1356,20 +1353,17 @@ export default function InstagramPage() {
                         src={currentModalImg}
                         controls
                         playsInline
-                        className="w-full h-full object-contain"
+                        className="w-full max-h-full object-contain"
                         onPlaying={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
                         onWaiting={() => { modalAudioRef.current?.pause() }}
                         onPause={() => { modalAudioRef.current?.pause() }}
                         onEnded={() => { modalAudioRef.current?.pause() }}
                       />
                     ) : (
-                      <Image
+                      <img
                         src={currentModalImg}
                         alt={selectedPost.caption || "Post"}
-                        fill
-                        sizes="600px"
-                        className="object-cover"
-                        unoptimized
+                        className="w-full max-h-full object-contain"
                       />
                     )}
                     {modalImages.length > 1 && (

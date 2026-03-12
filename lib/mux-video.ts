@@ -80,6 +80,48 @@ export async function muxVideoAudio(
 }
 
 /**
+ * Overlays a PNG image (with transparency) on top of every frame of a video.
+ * Used to bake text/stickers from the editor into the video itself.
+ */
+export async function overlayImageOnVideo(
+  videoUrl: string,
+  overlayPngUrl: string,
+  onProgress?: (message: string) => void,
+): Promise<Blob> {
+  const ff = await getFFmpeg(onProgress)
+
+  const videoExt = videoUrl.match(/\.(mp4|mov|webm)/) ? videoUrl.match(/\.(mp4|mov|webm)/)![1] : "mp4"
+
+  await ff.writeFile(`input.${videoExt}`, await fetchFile(videoUrl))
+  await ff.writeFile("overlay.png", await fetchFile(overlayPngUrl))
+
+  // Overlay PNG on top of video, re-encode with libx264
+  // overlay=0:0 places the overlay at top-left (both should be same dimensions)
+  // scale2ref scales overlay to match video dimensions
+  await ff.exec([
+    "-i", `input.${videoExt}`,
+    "-i", "overlay.png",
+    "-filter_complex", "[1:v]scale2ref[ovr][base];[base][ovr]overlay=0:0",
+    "-c:v", "libx264",
+    "-preset", "fast",
+    "-crf", "23",
+    "-pix_fmt", "yuv420p",
+    "-c:a", "copy",
+    "-movflags", "+faststart",
+    "output.mp4",
+  ])
+
+  const data = await ff.readFile("output.mp4") as Uint8Array
+
+  await ff.deleteFile(`input.${videoExt}`).catch(() => {})
+  await ff.deleteFile("overlay.png").catch(() => {})
+  await ff.deleteFile("output.mp4").catch(() => {})
+
+  const buffer = new Uint8Array(data).buffer as ArrayBuffer
+  return new Blob([buffer], { type: "video/mp4" })
+}
+
+/**
  * Combines a still image and audio into a video (like Instagram reels from photos).
  * The image is displayed as a static frame for the duration of the audio.
  */

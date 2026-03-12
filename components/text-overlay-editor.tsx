@@ -112,7 +112,7 @@ export type CanvasBlock = TextBlock | ShapeBlock | EllipseBlock | LineBlock | Im
 
 interface TextOverlayEditorProps {
   imageUrl: string
-  onExport: (dataUrl: string, blocks: CanvasBlock[]) => void
+  onExport: (dataUrl: string, blocks: CanvasBlock[], overlayOnlyUrl?: string) => void
   initialBlocks?: CanvasBlock[]
 }
 
@@ -691,8 +691,20 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
         pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
         mimeType: "image/png",
       })
+      // Also export overlay-only (no background) for video compositing
+      let overlayOnlyUrl: string | undefined
+      if (bgImageRef.current) {
+        bgImageRef.current.hide()
+        stageRef.current.draw()
+        overlayOnlyUrl = stageRef.current.toDataURL({
+          pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
+          mimeType: "image/png",
+        })
+        bgImageRef.current.show()
+        stageRef.current.draw()
+      }
       setSelectedId(null)
-      onExport(dataUrl, blocks)
+      onExport(dataUrl, blocks, overlayOnlyUrl)
     }
   }, [onExport, blocks, filters.realismPreset])
 

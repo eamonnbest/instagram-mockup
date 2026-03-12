@@ -689,10 +689,11 @@ function NewPostPage() {
                   ref={editorRef}
                   imageUrl={videoFrameUrl || originalImageUrls[editingTextIndex] || carouselImages[editingTextIndex] || selectedImage}
                   initialBlocks={overlayBlocksMap[editingTextIndex]}
-                  onExport={async (dataUrl, blocks) => {
+                  onExport={async (dataUrl, blocks, overlayOnlyUrl) => {
                     // Capture index before any async work (avoid stale closure)
                     const idx = editingTextIndex!
-                    const isVideo = isVideoUrl(carouselImages[idx] || selectedImage || "")
+                    const currentMediaUrl = carouselImages[idx] || selectedImage || ""
+                    const isVideo = isVideoUrl(currentMediaUrl)
                     setExportingOverlay(true)
                     try {
                       // Save the original (clean) image URL before first overlay
@@ -715,9 +716,28 @@ function NewPostPage() {
                       const { url: uploadedUrl } = await uploadViaSigned(file)
 
                       if (isVideo) {
-                        // For videos, the exported image becomes the thumbnail/cover, not a carousel replacement
+                        // Set the composited image as the thumbnail/cover
                         setThumbnailUrl(uploadedUrl)
                         editedCoverUrlRef.current = uploadedUrl
+
+                        // Bake the overlay into the video using FFmpeg
+                        if (overlayOnlyUrl) {
+                          try {
+                            setPostError(null)
+                            console.log("[Save] Baking overlay into video...")
+                            const { overlayImageOnVideo } = await import("@/lib/mux-video")
+                            const originalVideoUrl = originalImageUrls[idx] || currentMediaUrl
+                            const overlayBlob = await overlayImageOnVideo(originalVideoUrl, overlayOnlyUrl)
+                            const overlayFile = new File([overlayBlob], "overlay-video.mp4", { type: "video/mp4" })
+                            const { url: newVideoUrl } = await uploadViaSigned(overlayFile)
+                            setCarouselImages((prev) => prev.map((img, i) => (i === idx ? newVideoUrl : img)))
+                            if (idx === 0) setSelectedImage(newVideoUrl)
+                            console.log("[Save] Video overlay baked successfully")
+                          } catch (overlayErr) {
+                            console.error("Failed to bake overlay into video:", overlayErr)
+                            setPostError("Cover saved but couldn't bake text into video. Video will play without overlay.")
+                          }
+                        }
                       } else {
                         setCarouselImages((prev) => prev.map((img, i) => (i === idx ? uploadedUrl : img)))
                         if (idx === 0) setSelectedImage(uploadedUrl)
@@ -747,7 +767,7 @@ function NewPostPage() {
             ) : (
             <>
             {/* Carousel viewer */}
-            <div className="aspect-square max-w-md mx-auto relative bg-neutral-100 rounded-lg overflow-hidden">
+            <div className="aspect-[3/4] max-w-md mx-auto relative bg-neutral-100 rounded-lg overflow-hidden">
               {isVideoUrl(carouselImages[carouselIndex] || selectedImage || "") ? (
                 <video
                   src={carouselImages[carouselIndex] || selectedImage || ""}
@@ -1521,7 +1541,7 @@ function NewPostPage() {
                   </>
                 ) : (
                   <>
-                    <div className="aspect-square max-w-md mx-auto relative bg-neutral-100 rounded-lg overflow-hidden mb-4">
+                    <div className="aspect-[3/4] max-w-md mx-auto relative bg-neutral-100 rounded-lg overflow-hidden mb-4">
                       <Image src={generatedImage} alt="Generated" fill className="object-cover" unoptimized />
                     </div>
 
