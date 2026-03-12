@@ -55,6 +55,46 @@ function isVideoUrl(url: string): boolean {
     lower.includes(".mp4?") || lower.includes(".mov?") || lower.includes(".webm?")
 }
 
+/** Extract a still frame from a video URL as a blob URL for use as editor background */
+async function extractVideoFrame(videoUrl: string): Promise<string> {
+  const response = await fetch(videoUrl)
+  if (!response.ok) throw new Error(`Failed to fetch video: ${response.status}`)
+  const blob = await response.blob()
+  const objectUrl = URL.createObjectURL(blob)
+
+  const video = document.createElement("video")
+  video.muted = true
+  video.preload = "auto"
+  video.src = objectUrl
+
+  await new Promise<void>((resolve, reject) => {
+    video.onloadedmetadata = () => resolve()
+    video.onerror = () => reject(new Error("Failed to load video"))
+    setTimeout(() => reject(new Error("Video load timed out")), 15000)
+  })
+
+  video.currentTime = 0.1
+  await new Promise<void>((resolve, reject) => {
+    video.onseeked = () => resolve()
+    setTimeout(() => reject(new Error("Seek timed out")), 10000)
+  })
+  await new Promise((resolve) => setTimeout(resolve, 300))
+
+  const canvas = document.createElement("canvas")
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext("2d")!
+  ctx.drawImage(video, 0, 0)
+  URL.revokeObjectURL(objectUrl)
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((b) => {
+      if (b) resolve(URL.createObjectURL(b))
+      else reject(new Error("Failed to extract frame"))
+    }, "image/jpeg", 0.9)
+  })
+}
+
 function NewPostPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -84,6 +124,8 @@ function NewPostPage() {
   const [captionContext, setCaptionContext] = useState("")
   const [imageModel, setImageModel] = useState("fal-ai/nano-banana-2")
   const [editingTextIndex, setEditingTextIndex] = useState<number | null>(null)
+  const [videoFrameUrl, setVideoFrameUrl] = useState<string | null>(null)
+  const editedCoverUrlRef = useRef<string | null>(null)
   const [exportingOverlay, setExportingOverlay] = useState(false)
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
   const [uploadingReference, setUploadingReference] = useState(false)
@@ -512,7 +554,8 @@ function NewPostPage() {
       }
 
       // Generate thumbnail for video posts
-      let finalThumbnailUrl = thumbnailUrl
+      // Use edited cover ref (set synchronously during export) since setState is async
+      let finalThumbnailUrl = editedCoverUrlRef.current || thumbnailUrl
       const videoUrl = finalImages[0] || finalSelectedImage
       if (isVideoUrl(videoUrl) && !finalThumbnailUrl) {
         console.log("[Save] Generating thumbnail for:", videoUrl?.slice(-30))
@@ -644,11 +687,12 @@ function NewPostPage() {
               <div className="max-w-md mx-auto">
                 <TextOverlayEditor
                   ref={editorRef}
-                  imageUrl={originalImageUrls[editingTextIndex] || carouselImages[editingTextIndex] || selectedImage}
+                  imageUrl={videoFrameUrl || originalImageUrls[editingTextIndex] || carouselImages[editingTextIndex] || selectedImage}
                   initialBlocks={overlayBlocksMap[editingTextIndex]}
                   onExport={async (dataUrl, blocks) => {
                     // Capture index before any async work (avoid stale closure)
                     const idx = editingTextIndex!
+                    const isVideo = isVideoUrl(carouselImages[idx] || selectedImage || "")
                     setExportingOverlay(true)
                     try {
                       // Save the original (clean) image URL before first overlay
@@ -667,12 +711,24 @@ function NewPostPage() {
 
                       const res = await fetch(dataUrl)
                       const blob = await res.blob()
-                      const file = new File([blob], "text-overlay.png", { type: "image/png" })
+                      const file = new File([blob], isVideo ? "cover.jpg" : "text-overlay.png", { type: isVideo ? "image/jpeg" : "image/png" })
                       const { url: uploadedUrl } = await uploadViaSigned(file)
-                      setCarouselImages((prev) => prev.map((img, i) => (i === idx ? uploadedUrl : img)))
-                      if (idx === 0) setSelectedImage(uploadedUrl)
-                      // Store exported URL in ref so createPost can read it immediately (state updates are async)
-                      exportedImageUrlRef.current = uploadedUrl
+
+                      if (isVideo) {
+                        // For videos, the exported image becomes the thumbnail/cover, not a carousel replacement
+                        setThumbnailUrl(uploadedUrl)
+                        editedCoverUrlRef.current = uploadedUrl
+                      } else {
+                        setCarouselImages((prev) => prev.map((img, i) => (i === idx ? uploadedUrl : img)))
+                        if (idx === 0) setSelectedImage(uploadedUrl)
+                        // Store exported URL in ref so createPost can read it immediately (state updates are async)
+                        exportedImageUrlRef.current = uploadedUrl
+                      }
+                      // Clean up video frame blob URL
+                      if (videoFrameUrl) {
+                        URL.revokeObjectURL(videoFrameUrl)
+                        setVideoFrameUrl(null)
+                      }
                       setEditingTextIndex(null)
                     } catch (error) {
                       console.error("Failed to export text overlay:", error)
@@ -799,11 +855,24 @@ function NewPostPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setEditingTextIndex(carouselIndex)}
+                onClick={async () => {
+                  const currentUrl = carouselImages[carouselIndex] || selectedImage || ""
+                  if (isVideoUrl(currentUrl)) {
+                    try {
+                      const frameUrl = await extractVideoFrame(currentUrl)
+                      setVideoFrameUrl(frameUrl)
+                    } catch (err) {
+                      console.error("Failed to extract video frame:", err)
+                      alert("Failed to extract video frame for editing.")
+                      return
+                    }
+                  }
+                  setEditingTextIndex(carouselIndex)
+                }}
                 className="flex-1"
               >
                 <Type className="w-4 h-4 mr-1.5" />
-                Edit Image
+                {isVideoUrl(carouselImages[carouselIndex] || selectedImage || "") ? "Edit Cover" : "Edit Image"}
               </Button>
               {!isVideoUrl(carouselImages[carouselIndex] || selectedImage || "") && (
                 <Button
