@@ -452,10 +452,12 @@ function NewPostPage() {
 
     setPosting(true)
     setPostError(null)
+    console.log("[Save] createPost called", { selectedImage: selectedImage?.slice(-30), editingTextIndex, editorRef: !!editorRef.current, carouselImages: carouselImages.length })
     try {
       // If editor is open, auto-export before saving
       exportedImageUrlRef.current = null
       if (editingTextIndex !== null && editorRef.current) {
+        console.log("[Save] Waiting for editor auto-export...")
         await new Promise<void>((resolve) => {
           const timeout = setTimeout(() => {
             editorExportResolveRef.current = null
@@ -478,27 +480,32 @@ function NewPostPage() {
       // If there's audio, mux it into the primary media (video or still image → video)
       let finalAudioUrl = audioUrl
       const primaryImage = finalImages[0] || finalSelectedImage
+      console.log("[Save] Starting save flow", { audioUrl: !!audioUrl, primaryImage: primaryImage?.slice(-30), isVideo: primaryImage ? isVideoUrl(primaryImage) : false })
       if (audioUrl && primaryImage) {
         try {
           if (isVideoUrl(primaryImage)) {
             // Video + audio → mux into single MP4
+            console.log("[Save] Muxing video + audio...")
             const { muxVideoAudio } = await import("@/lib/mux-video")
             const muxedBlob = await muxVideoAudio(primaryImage, audioUrl, undefined, videoDuration ?? undefined)
             const muxedFile = new File([muxedBlob], "muxed.mp4", { type: "video/mp4" })
             const { url: muxedUrl } = await uploadViaSigned(muxedFile)
             finalImages[0] = muxedUrl
+            console.log("[Save] Mux complete")
             // Keep finalAudioUrl so audio_url is preserved in DB for future edits
           } else {
             // Still image + audio → create video from image (like Instagram reels)
+            console.log("[Save] Muxing image + audio → reel...")
             const { muxImageAudio } = await import("@/lib/mux-video")
             const muxedBlob = await muxImageAudio(primaryImage, audioUrl)
             const muxedFile = new File([muxedBlob], "reel.mp4", { type: "video/mp4" })
             const { url: muxedUrl } = await uploadViaSigned(muxedFile)
             finalImages[0] = muxedUrl
+            console.log("[Save] Reel mux complete")
             // Keep finalAudioUrl so audio_url is preserved in DB for future edits
           }
         } catch (muxErr) {
-          console.error("Failed to mux media+audio:", muxErr)
+          console.error("[Save] Failed to mux media+audio:", muxErr)
           setPostError("Failed to combine media and audio. Saving with separate audio.")
           // Fall through — save with separate audio as fallback
         }
@@ -508,14 +515,17 @@ function NewPostPage() {
       let finalThumbnailUrl = thumbnailUrl
       const videoUrl = finalImages[0] || finalSelectedImage
       if (isVideoUrl(videoUrl) && !finalThumbnailUrl) {
+        console.log("[Save] Generating thumbnail for:", videoUrl?.slice(-30))
         try {
           const thumb = await generateVideoThumbnail(videoUrl)
           if (thumb) finalThumbnailUrl = thumb
+          console.log("[Save] Thumbnail done:", !!thumb)
         } catch (err) {
-          console.error("Thumbnail generation failed:", err)
+          console.error("[Save] Thumbnail generation failed:", err)
         }
       }
 
+      console.log("[Save] Sending POST/PATCH...")
       const isEdit = !!editPostId
       const res = await fetch("/api/instagram/posts", {
         method: isEdit ? "PATCH" : "POST",
