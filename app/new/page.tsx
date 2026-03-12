@@ -96,6 +96,7 @@ function NewPostPage() {
   const [activeRealismChips, setActiveRealismChips] = useState<Set<string>>(new Set())
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [musicPrompt, setMusicPrompt] = useState("")
+  const [savedMusicPrompt, setSavedMusicPrompt] = useState<string | null>(null)
   const [musicDuration, setMusicDuration] = useState(30)
   const [musicInstrumental, setMusicInstrumental] = useState(true)
   const [generatingMusic, setGeneratingMusic] = useState(false)
@@ -163,6 +164,7 @@ function NewPostPage() {
             setAudioUrl(post.audio_url)
             setShowMusic(true)
           }
+          if (post.music_prompt) setSavedMusicPrompt(post.music_prompt)
           if (post.thumbnail_url) setThumbnailUrl(post.thumbnail_url)
           // Restore overlay blocks if saved (stored as { "0": [...], "1": [...] })
           if (post.overlay_blocks && typeof post.overlay_blocks === "object") {
@@ -529,6 +531,7 @@ function NewPostPage() {
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
                 audio_url: finalAudioUrl,
                 thumbnail_url: finalThumbnailUrl,
+                music_prompt: savedMusicPrompt,
               }
             : {
                 image_url: finalImages[0] || finalSelectedImage,
@@ -540,6 +543,7 @@ function NewPostPage() {
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
                 audio_url: finalAudioUrl,
                 thumbnail_url: finalThumbnailUrl,
+                music_prompt: savedMusicPrompt,
               }
         ),
       })
@@ -922,6 +926,9 @@ function NewPostPage() {
                           />
                         ) : (
                           <>
+                            {savedMusicPrompt && (
+                              <p className="text-xs text-neutral-500 italic mb-1">Prompt: {savedMusicPrompt}</p>
+                            )}
                             <audio src={audioUrl} controls className="w-full h-10" />
                             <div className="flex gap-2">
                               <Button
@@ -949,6 +956,7 @@ function NewPostPage() {
                                 onClick={() => {
                                   setAudioUrl(null)
                                   setMusicPrompt("")
+                                  setSavedMusicPrompt(null)
                                 }}
                               >
                                 <Trash2 className="w-3.5 h-3.5 mr-1" />
@@ -1069,6 +1077,7 @@ function NewPostPage() {
                               }
                               const data = await res.json()
                               setAudioUrl(data.audioUrl)
+                              setSavedMusicPrompt(fullPrompt)
                             } catch (error) {
                               alert(error instanceof Error ? error.message : "Music generation failed")
                             } finally {

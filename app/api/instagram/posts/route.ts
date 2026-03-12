@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { image_url, caption, likes_count = 0, comments_count = 0, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status = "draft", audio_url, thumbnail_url } = body
+  const { image_url, caption, likes_count = 0, comments_count = 0, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status = "draft", audio_url, thumbnail_url, music_prompt } = body
 
   const { data: maxOrder } = await getSupabase()
     .from("instagram_posts")
@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       status,
       audio_url: audio_url || null,
       thumbnail_url: thumbnail_url || null,
+      music_prompt: music_prompt || null,
     })
     .select()
     .single()
@@ -82,7 +83,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { id, image_url, caption, likes_count, comments_count, display_order, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status, audio_url, thumbnail_url } = body
+  const { id, image_url, caption, likes_count, comments_count, display_order, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status, audio_url, thumbnail_url, music_prompt } = body
 
   if (!id) {
     return NextResponse.json({ error: "Missing post ID" }, { status: 400 })
@@ -103,6 +104,7 @@ export async function PATCH(request: Request) {
   if (status !== undefined) updates.status = status
   if (audio_url !== undefined) updates.audio_url = audio_url
   if (thumbnail_url !== undefined) updates.thumbnail_url = thumbnail_url
+  if (music_prompt !== undefined) updates.music_prompt = music_prompt
 
   const { data: post, error } = await getSupabase().from("instagram_posts").update(updates).eq("id", id).select().single()
 
