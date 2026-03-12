@@ -159,7 +159,10 @@ function NewPostPage() {
           setSelectedImage(images[0] || null)
           setCarouselImages(images)
           setCaption(post.caption || "")
-          if (post.audio_url) setAudioUrl(post.audio_url)
+          if (post.audio_url) {
+            setAudioUrl(post.audio_url)
+            setShowMusic(true)
+          }
           if (post.thumbnail_url) setThumbnailUrl(post.thumbnail_url)
           // Restore overlay blocks if saved (stored as { "0": [...], "1": [...] })
           if (post.overlay_blocks && typeof post.overlay_blocks === "object") {
@@ -482,7 +485,7 @@ function NewPostPage() {
             const muxedFile = new File([muxedBlob], "muxed.mp4", { type: "video/mp4" })
             const { url: muxedUrl } = await uploadViaSigned(muxedFile)
             finalImages[0] = muxedUrl
-            finalAudioUrl = null
+            // Keep finalAudioUrl so audio_url is preserved in DB for future edits
           } else {
             // Still image + audio → create video from image (like Instagram reels)
             const { muxImageAudio } = await import("@/lib/mux-video")
@@ -490,7 +493,7 @@ function NewPostPage() {
             const muxedFile = new File([muxedBlob], "reel.mp4", { type: "video/mp4" })
             const { url: muxedUrl } = await uploadViaSigned(muxedFile)
             finalImages[0] = muxedUrl
-            finalAudioUrl = null
+            // Keep finalAudioUrl so audio_url is preserved in DB for future edits
           }
         } catch (muxErr) {
           console.error("Failed to mux media+audio:", muxErr)
