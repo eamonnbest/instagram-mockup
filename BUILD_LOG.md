@@ -1,5 +1,48 @@
 # Build Log
 
+## Session: 2026-03-12 — Music editing fixes, music prompt storage
+
+### Completed (committed, pushed)
+
+**Preserve audio_url after mux (`0e3c88a`):**
+- Music section now auto-expands when editing a post that has `audio_url`
+- `audio_url` is no longer nulled after muxing — the original audio file URL stays in the DB so the track is accessible on future edits
+- Previously, muxing baked audio into the video and set `audio_url = null`, making music uneditable after save
+
+**Retroactive audio_url fix (manual SQL):**
+- Restored `audio_url` values for all 5 existing video posts via Supabase SQL editor
+- Matched audio files in `post-audio` bucket to posts by timestamp proximity
+
+**Store music prompt (`e338204`):**
+- New `music_prompt` text column on `instagram_posts`
+- Full composed prompt (styles + user text) saved when music is generated
+- Displayed above audio player when editing: "Prompt: ..."
+- Cleared on music removal
+- API route (POST + PATCH) accepts and stores `music_prompt`
+
+### Key Learnings
+- When giving SQL with long URLs, ensure no line breaks/spaces get introduced — caused `pu  blic` corruption in 5 audio URLs (fixed with REPLACE)
+
+### What's NOT Done
+- `isVideoUrl()` still duplicated in `page.tsx` and `new/page.tsx`
+- "scheduled ago" text bug still present
+- No auth on API routes (by design)
+- Existing 5 video posts don't have `music_prompt` stored (column is empty) — only new generations will populate it
+- Audio trimmer range inputs still small on mobile
+- FFmpeg 25MB download has no progress indicator
+
+### Git Commits
+- `0e3c88a` — Preserve audio_url after mux and expand music section on edit
+- `e338204` — Store and display music prompt used for each post
+
+### Next Steps
+- Test music generation + save + edit round-trip to confirm prompt is stored and shown
+- Consider showing music prompt in the main post modal (not just edit view)
+- Extract `isVideoUrl()` to shared utility
+- Fix "scheduled ago" text bug
+
+---
+
 ## Session: 2026-03-11 — Mobile fixes, music ToS fix, audio fade, image→reel mux
 
 ### Completed (committed, pushed)
