@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { image_url, caption, likes_count = 0, comments_count = 0, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status = "draft", audio_url, thumbnail_url, music_prompt, crop_position } = body
+  const { image_url, caption, likes_count = 0, comments_count = 0, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status = "draft", audio_url, thumbnail_url, music_prompt, crop_position, overlay_image_url } = body
 
   const { data: maxOrder } = await getSupabase()
     .from("instagram_posts")
@@ -64,6 +64,7 @@ export async function POST(request: Request) {
       thumbnail_url: thumbnail_url || null,
       music_prompt: music_prompt || null,
       crop_position: crop_position || null,
+      overlay_image_url: overlay_image_url || null,
     })
     .select()
     .single()
@@ -84,7 +85,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { id, image_url, caption, likes_count, comments_count, display_order, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status, audio_url, thumbnail_url, music_prompt, crop_position } = body
+  const { id, image_url, caption, likes_count, comments_count, display_order, notes, tags, carousel_images, scheduled_for, overlay_blocks, original_image_url, status, audio_url, thumbnail_url, music_prompt, crop_position, overlay_image_url } = body
 
   if (!id) {
     return NextResponse.json({ error: "Missing post ID" }, { status: 400 })
@@ -107,6 +108,7 @@ export async function PATCH(request: Request) {
   if (thumbnail_url !== undefined) updates.thumbnail_url = thumbnail_url
   if (music_prompt !== undefined) updates.music_prompt = music_prompt
   if (crop_position !== undefined) updates.crop_position = crop_position
+  if (overlay_image_url !== undefined) updates.overlay_image_url = overlay_image_url
 
   console.log("[PATCH] crop_position received:", crop_position, "updates:", JSON.stringify(updates))
   const { data: post, error } = await getSupabase().from("instagram_posts").update(updates).eq("id", id).select().single()

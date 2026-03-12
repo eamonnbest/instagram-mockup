@@ -114,6 +114,7 @@ interface TextOverlayEditorProps {
   imageUrl: string
   onExport: (dataUrl: string, blocks: CanvasBlock[], overlayOnlyUrl?: string) => void
   initialBlocks?: CanvasBlock[]
+  isVideoCover?: boolean
 }
 
 export interface TextOverlayEditorHandle {
@@ -123,8 +124,8 @@ export interface TextOverlayEditorHandle {
 const CANVAS_W = 1080
 const CANVAS_H = 1440 // 3:4 aspect ratio
 const CANVAS_SIZE = CANVAS_W // backward compat for width references
-const DISPLAY_W = 400
-const DISPLAY_H = Math.round(DISPLAY_W * (CANVAS_H / CANVAS_W)) // 533
+const DISPLAY_W = 320
+const DISPLAY_H = Math.round(DISPLAY_W * (CANVAS_H / CANVAS_W)) // 427
 const DISPLAY_SIZE = DISPLAY_W // backward compat for width references
 
 // Sub-component for text blocks with auto-measured background
@@ -275,7 +276,7 @@ const FONT_FAMILIES = [
   "Comic Sans MS",
 ]
 
-export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlayEditorProps>(function TextOverlayEditor({ imageUrl, onExport, initialBlocks }, ref) {
+export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlayEditorProps>(function TextOverlayEditor({ imageUrl, onExport, initialBlocks, isVideoCover }, ref) {
   const stageRef = useRef<Konva.Stage>(null)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
@@ -659,6 +660,19 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     }
     stageRef.current.draw()
 
+    // Export overlay-only PNG (no background) for video compositing — used by both paths
+    let overlayOnlyUrl: string | undefined
+    if (bgImageRef.current) {
+      bgImageRef.current.hide()
+      stageRef.current.draw()
+      overlayOnlyUrl = stageRef.current.toDataURL({
+        pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
+        mimeType: "image/png",
+      })
+      bgImageRef.current.show()
+      stageRef.current.draw()
+    }
+
     // If a realism preset is active, export via JPEG re-encode cycle to strip AI spectral fingerprints
     if (filters.realismPreset) {
       const pngUrl = stageRef.current.toDataURL({
@@ -669,7 +683,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
       // This destroys subtle diffusion model artifacts in the frequency domain
       const fallbackExport = () => {
         setSelectedId(null)
-        onExport(pngUrl, blocks)
+        onExport(pngUrl, blocks, overlayOnlyUrl)
       }
       const tempImg = new window.Image()
       tempImg.onerror = fallbackExport
@@ -688,7 +702,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
           // Second pass back to PNG for clean output (artifacts are now baked in)
           const finalUrl = c.toDataURL("image/png")
           setSelectedId(null)
-          onExport(finalUrl, blocks)
+          onExport(finalUrl, blocks, overlayOnlyUrl)
         }
         tempImg2.src = jpeg1
       }
@@ -698,18 +712,6 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
         pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
         mimeType: "image/png",
       })
-      // Also export overlay-only (no background) for video compositing
-      let overlayOnlyUrl: string | undefined
-      if (bgImageRef.current) {
-        bgImageRef.current.hide()
-        stageRef.current.draw()
-        overlayOnlyUrl = stageRef.current.toDataURL({
-          pixelRatio: CANVAS_SIZE / DISPLAY_SIZE,
-          mimeType: "image/png",
-        })
-        bgImageRef.current.show()
-        stageRef.current.draw()
-      }
       setSelectedId(null)
       onExport(dataUrl, blocks, overlayOnlyUrl)
     }
@@ -1275,8 +1277,8 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
         </div>
       )}
 
-      {/* Background filters — shown when nothing selected */}
-      {!selectedBlock && (
+      {/* Background filters — shown when nothing selected, hidden for video covers */}
+      {!selectedBlock && !isVideoCover && (
         <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 space-y-2">
           <span className="text-xs font-medium text-neutral-700">Background Filters</span>
           <div className="flex items-center gap-2">

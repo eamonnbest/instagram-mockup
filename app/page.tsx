@@ -92,6 +92,7 @@ interface InstagramPost {
   audio_url: string | null
   thumbnail_url: string | null
   crop_position: { x: number; y: number } | null
+  overlay_image_url: string | null
 }
 
 interface NoteEntry {
@@ -1051,21 +1052,27 @@ export default function InstagramPage() {
 
               {/* Scrollable content */}
               <div className="flex-1 overflow-y-auto">
-                {/* Image/video — native aspect ratio */}
+                {/* Image/video — 3:4 aspect ratio for videos, native for images */}
                 <div className="relative w-full bg-black">
                   {currentModalImg ? (
                     <>
                       {isVideoUrl(currentModalImg) ? (
-                        <video
-                          src={currentModalImg}
-                          controls
-                          playsInline
-                          className="w-full object-contain"
-                          onPlaying={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
-                          onWaiting={() => { modalAudioRef.current?.pause() }}
-                          onPause={() => { modalAudioRef.current?.pause() }}
-                          onEnded={() => { modalAudioRef.current?.pause() }}
-                        />
+                        <div className="relative w-full aspect-[3/4] overflow-hidden">
+                          <video
+                            src={currentModalImg}
+                            controls
+                            playsInline
+                            className="w-full h-full object-cover"
+                            style={selectedPost.crop_position ? { objectPosition: `${selectedPost.crop_position.x * 100}% ${selectedPost.crop_position.y * 100}%` } : undefined}
+                            onPlaying={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
+                            onWaiting={() => { modalAudioRef.current?.pause() }}
+                            onPause={() => { modalAudioRef.current?.pause() }}
+                            onEnded={() => { modalAudioRef.current?.pause() }}
+                          />
+                          {selectedPost.overlay_image_url && (
+                            <img src={selectedPost.overlay_image_url} alt="" className="absolute inset-0 w-full h-full pointer-events-none" />
+                          )}
+                        </div>
                       ) : (
                         <img
                           src={currentModalImg}
@@ -1347,21 +1354,27 @@ export default function InstagramPage() {
 
             : /* ===== DESKTOP LAYOUT ===== */
             <div className="flex flex-row h-[90vh] max-h-[800px]">
-              {/* Left: image / carousel — native aspect ratio */}
+              {/* Left: image / carousel — 3:4 for videos, native for images */}
               <div className="relative w-[600px] flex-shrink-0 bg-black flex items-center justify-center">
                 {currentModalImg ? (
                   <>
                     {isVideoUrl(currentModalImg) ? (
-                      <video
-                        src={currentModalImg}
-                        controls
-                        playsInline
-                        className="w-full max-h-full object-contain"
-                        onPlaying={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
-                        onWaiting={() => { modalAudioRef.current?.pause() }}
-                        onPause={() => { modalAudioRef.current?.pause() }}
-                        onEnded={() => { modalAudioRef.current?.pause() }}
-                      />
+                      <div className="relative w-full aspect-[3/4] max-h-full overflow-hidden">
+                        <video
+                          src={currentModalImg}
+                          controls
+                          playsInline
+                          className="w-full h-full object-cover"
+                          style={selectedPost.crop_position ? { objectPosition: `${selectedPost.crop_position.x * 100}% ${selectedPost.crop_position.y * 100}%` } : undefined}
+                          onPlaying={(e) => { const a = modalAudioRef.current; if (a) { a.currentTime = (e.target as HTMLVideoElement).currentTime; a.play().catch(() => {}) } }}
+                          onWaiting={() => { modalAudioRef.current?.pause() }}
+                          onPause={() => { modalAudioRef.current?.pause() }}
+                          onEnded={() => { modalAudioRef.current?.pause() }}
+                        />
+                        {selectedPost.overlay_image_url && (
+                          <img src={selectedPost.overlay_image_url} alt="" className="absolute inset-0 w-full h-full pointer-events-none" />
+                        )}
+                      </div>
                     ) : (
                       <img
                         src={currentModalImg}

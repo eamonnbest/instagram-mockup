@@ -103,7 +103,8 @@ function NewPostPage() {
   const editorRef = useRef<TextOverlayEditorHandle>(null)
   const editorExportResolveRef = useRef<(() => void) | null>(null)
   const exportedImageUrlRef = useRef<string | null>(null)
-  const overlayPngUrlRef = useRef<string | null>(null) // Transparent PNG of text overlay for FFmpeg baking
+  const overlayImageUrlRef = useRef<string | null>(null)
+  const overlayBlocksMapRef = useRef<Record<number, CanvasBlock[]>>({})
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [carouselImages, setCarouselImages] = useState<string[]>([])
   const [carouselIndex, setCarouselIndex] = useState(0)
@@ -153,6 +154,17 @@ function NewPostPage() {
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
   const [cropPosition, setCropPosition] = useState<{ x: number; y: number } | null>(null)
   const [showRepositioner, setShowRepositioner] = useState(false)
+  const [overlayImageUrl, setOverlayImageUrl] = useState<string | null>(null)
+
+  // Clear overlay state when media is replaced (prevents stale overlay from old video)
+  function clearOverlayState() {
+    setOverlayImageUrl(null)
+    overlayImageUrlRef.current = null
+    setOverlayBlocksMap({})
+    overlayBlocksMapRef.current = {}
+    setThumbnailUrl(null)
+    setOriginalImageUrls([])
+  }
 
   function toggleRealismChip(chipId: string) {
     const chip = REALISM_CHIPS.find((c) => c.id === chipId)
@@ -176,6 +188,14 @@ function NewPostPage() {
 
     setActiveRealismChips(next)
   }
+
+  // Clean up video frame blob URL when leaving the editor (prevents memory leak)
+  useEffect(() => {
+    if (editingTextIndex === null && videoFrameUrl) {
+      URL.revokeObjectURL(videoFrameUrl)
+      setVideoFrameUrl(null)
+    }
+  }, [editingTextIndex, videoFrameUrl])
 
   // Deactivate chips whose text was manually edited out of the prompt
   useEffect(() => {
@@ -213,6 +233,10 @@ function NewPostPage() {
           if (post.music_prompt) setSavedMusicPrompt(post.music_prompt)
           if (post.thumbnail_url) setThumbnailUrl(post.thumbnail_url)
           if (post.crop_position) setCropPosition(post.crop_position)
+          if (post.overlay_image_url) {
+            setOverlayImageUrl(post.overlay_image_url)
+            overlayImageUrlRef.current = post.overlay_image_url
+          }
           // Restore overlay blocks if saved (stored as { "0": [...], "1": [...] })
           if (post.overlay_blocks && typeof post.overlay_blocks === "object") {
             const blocksMap: Record<number, CanvasBlock[]> = {}
@@ -220,6 +244,7 @@ function NewPostPage() {
               blocksMap[Number(key)] = val as CanvasBlock[]
             }
             setOverlayBlocksMap(blocksMap)
+            overlayBlocksMapRef.current = blocksMap
             // If we have overlay blocks, use original URLs as the editor background
             if (post.original_image_url) {
               // original_image_url is stored as a comma-less JSON array or single string
@@ -278,6 +303,7 @@ function NewPostPage() {
       setCarouselIndex(carouselImages.length)
       setAddingMore(false)
     } else {
+      clearOverlayState()
       setSelectedImage(trimmed)
       setCarouselImages([trimmed])
       setCarouselIndex(0)
@@ -399,6 +425,7 @@ function NewPostPage() {
       setCarouselIndex(carouselImages.length)
       setAddingMore(false)
     } else {
+      clearOverlayState()
       setSelectedImage(url)
       setCarouselImages([url])
       setCarouselIndex(0)
@@ -432,6 +459,7 @@ function NewPostPage() {
       setCarouselIndex(carouselImages.length)
       setAddingMore(false)
     } else {
+      clearOverlayState()
       setSelectedImage(generatedImage)
       setCarouselImages([generatedImage])
       setCarouselIndex(0)
@@ -524,24 +552,6 @@ function NewPostPage() {
         : [...carouselImages]
       const finalSelectedImage = freshImage || carouselImages[0] || selectedImage
 
-      // Bake text overlay into video if we have one (must happen here, not in onExport, for proper async sequencing)
-      const overlayPng = overlayPngUrlRef.current
-      overlayPngUrlRef.current = null
-      if (overlayPng && finalImages[0] && isVideoUrl(finalImages[0])) {
-        try {
-          console.log("[Save] Baking text overlay into video...")
-          const { overlayImageOnVideo } = await import("@/lib/mux-video")
-          const overlayBlob = await overlayImageOnVideo(finalImages[0], overlayPng)
-          const overlayFile = new File([overlayBlob], "overlay-video.mp4", { type: "video/mp4" })
-          const { url: newVideoUrl } = await uploadViaSigned(overlayFile)
-          finalImages[0] = newVideoUrl
-          console.log("[Save] Text overlay baked into video successfully")
-        } catch (overlayErr) {
-          console.error("[Save] Failed to bake overlay into video:", overlayErr)
-          setPostError("Couldn't bake text into video. Saving without overlay.")
-        }
-      }
-
       // If there's audio, mux it into the primary media (video or still image → video)
       let finalAudioUrl = audioUrl
       const primaryImage = finalImages[0] || finalSelectedImage
@@ -603,12 +613,13 @@ function NewPostPage() {
                 image_url: finalImages[0] || finalSelectedImage,
                 caption,
                 carousel_images: finalImages.length > 1 ? finalImages : [],
-                overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
+                overlay_blocks: Object.keys(overlayBlocksMapRef.current).length > 0 ? overlayBlocksMapRef.current : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
                 audio_url: finalAudioUrl,
                 thumbnail_url: finalThumbnailUrl,
                 music_prompt: savedMusicPrompt,
                 crop_position: cropPosition,
+                overlay_image_url: overlayImageUrlRef.current,
               }
             : {
                 image_url: finalImages[0] || finalSelectedImage,
@@ -616,12 +627,13 @@ function NewPostPage() {
                 likes_count: Math.floor(Math.random() * 30) + 10,
                 comments_count: Math.floor(Math.random() * 5) + 1,
                 carousel_images: finalImages.length > 1 ? finalImages : [],
-                overlay_blocks: Object.keys(overlayBlocksMap).length > 0 ? overlayBlocksMap : null,
+                overlay_blocks: Object.keys(overlayBlocksMapRef.current).length > 0 ? overlayBlocksMapRef.current : null,
                 original_image_url: originalImageUrls.length > 0 ? JSON.stringify(originalImageUrls) : null,
                 audio_url: finalAudioUrl,
                 thumbnail_url: finalThumbnailUrl,
                 music_prompt: savedMusicPrompt,
                 crop_position: cropPosition,
+                overlay_image_url: overlayImageUrlRef.current,
               }
         ),
       })
@@ -731,6 +743,7 @@ function NewPostPage() {
                   ref={editorRef}
                   imageUrl={videoFrameUrl || originalImageUrls[editingTextIndex] || carouselImages[editingTextIndex] || selectedImage}
                   initialBlocks={overlayBlocksMap[editingTextIndex]}
+                  isVideoCover={isVideoUrl(carouselImages[editingTextIndex] || selectedImage || "")}
                   onExport={async (dataUrl, blocks, overlayOnlyUrl) => {
                     // Capture index before any async work (avoid stale closure)
                     const idx = editingTextIndex!
@@ -751,6 +764,7 @@ function NewPostPage() {
                       // and they're already baked into the exported PNG
                       const persistableBlocks = blocks.filter((b) => b.type !== "image")
                       setOverlayBlocksMap((prev) => ({ ...prev, [idx]: persistableBlocks }))
+                      overlayBlocksMapRef.current = { ...overlayBlocksMapRef.current, [idx]: persistableBlocks }
 
                       const res = await fetch(dataUrl)
                       const blob = await res.blob()
@@ -761,9 +775,22 @@ function NewPostPage() {
                         // Set the composited image as the thumbnail/cover
                         setThumbnailUrl(uploadedUrl)
                         editedCoverUrlRef.current = uploadedUrl
-                        // Store overlay PNG for FFmpeg baking in createPost (can't bake here — async timing issue)
-                        if (overlayOnlyUrl) {
-                          overlayPngUrlRef.current = overlayOnlyUrl
+                        // Upload the overlay-only PNG for playback rendering, or clear if no blocks
+                        if (overlayOnlyUrl && blocks.length > 0) {
+                          try {
+                            const overlayRes = await fetch(overlayOnlyUrl)
+                            const overlayBlob = await overlayRes.blob()
+                            const overlayFile = new File([overlayBlob], "overlay.png", { type: "image/png" })
+                            const { url: overlayUploadedUrl } = await uploadViaSigned(overlayFile)
+                            setOverlayImageUrl(overlayUploadedUrl)
+                            overlayImageUrlRef.current = overlayUploadedUrl
+                          } catch (err) {
+                            console.error("Failed to upload overlay PNG:", err)
+                          }
+                        } else {
+                          // No overlay blocks — clear any existing overlay
+                          setOverlayImageUrl(null)
+                          overlayImageUrlRef.current = null
                         }
                       } else {
                         setCarouselImages((prev) => prev.map((img, i) => (i === idx ? uploadedUrl : img)))
@@ -796,25 +823,30 @@ function NewPostPage() {
             {/* Carousel viewer */}
             <div className="aspect-[3/4] max-w-md mx-auto relative bg-neutral-100 rounded-lg overflow-hidden">
               {isVideoUrl(carouselImages[carouselIndex] || selectedImage || "") ? (
-                <video
-                  src={carouselImages[carouselIndex] || selectedImage || ""}
-                  controls
-                  playsInline
-                  className="w-full h-full object-cover"
-                  style={cropPosition ? { objectPosition: `${cropPosition.x * 100}% ${cropPosition.y * 100}%` } : undefined}
-                  onLoadedMetadata={(e) => {
-                    const dur = (e.target as HTMLVideoElement).duration
-                    if (dur && isFinite(dur)) {
-                      setVideoDuration(Math.round(dur))
-                      // Auto-set music duration to match video length (pick closest option)
-                      const options = [10, 15, 30, 60, 120, 180, 300]
-                      const closest = options.reduce((prev, curr) =>
-                        Math.abs(curr - dur) < Math.abs(prev - dur) ? curr : prev
-                      )
-                      setMusicDuration(closest)
-                    }
-                  }}
-                />
+                <>
+                  <video
+                    src={carouselImages[carouselIndex] || selectedImage || ""}
+                    controls
+                    playsInline
+                    className="w-full h-full object-cover"
+                    style={cropPosition ? { objectPosition: `${cropPosition.x * 100}% ${cropPosition.y * 100}%` } : undefined}
+                    onLoadedMetadata={(e) => {
+                      const dur = (e.target as HTMLVideoElement).duration
+                      if (dur && isFinite(dur)) {
+                        setVideoDuration(Math.round(dur))
+                        // Auto-set music duration to match video length (pick closest option)
+                        const options = [10, 15, 30, 60, 120, 180, 300]
+                        const closest = options.reduce((prev, curr) =>
+                          Math.abs(curr - dur) < Math.abs(prev - dur) ? curr : prev
+                        )
+                        setMusicDuration(closest)
+                      }
+                    }}
+                  />
+                  {overlayImageUrl && (
+                    <img src={overlayImageUrl} alt="" className="absolute inset-0 w-full h-full pointer-events-none" style={{ objectFit: "fill" }} />
+                  )}
+                </>
               ) : (
                 <Image src={carouselImages[carouselIndex] || selectedImage} alt="Selected" fill className="object-cover" unoptimized />
               )}
