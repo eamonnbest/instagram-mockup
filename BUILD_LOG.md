@@ -1,6 +1,6 @@
 # Build Log
 
-## Session: 2026-03-12 — Music editing fixes, music prompt storage
+## Session: 2026-03-12 — Music editing fixes, music prompt storage, thumbnail fix
 
 ### Completed (committed, pushed)
 
@@ -14,13 +14,23 @@
 - Matched audio files in `post-audio` bucket to posts by timestamp proximity
 
 **Store music prompt (`e338204`):**
-- New `music_prompt` text column on `instagram_posts`
+- New `music_prompt` text column on `instagram_posts` (user added via SQL editor)
 - Full composed prompt (styles + user text) saved when music is generated
 - Displayed above audio player when editing: "Prompt: ..."
 - Cleared on music removal
 - API route (POST + PATCH) accepts and stores `music_prompt`
 
+**Fix video thumbnail generation hanging on save (`a818cb1`):**
+- Root cause: `crossOrigin = "anonymous"` on video element prevented metadata from loading when Supabase didn't return CORS headers — promise hung forever with no timeout
+- Fix: fetch video as blob first, create object URL (same-origin, no CORS)
+- `requestVideoFrameCallback` doesn't fire for offscreen/detached videos — replaced with 300ms delay after seek
+- Added `withTimeout` wrapper to every async step (fetch, blob read, metadata, seek, frame wait) so save never hangs
+- Added `[Save]` and `[Thumbnail]` console logs throughout save flow for debugging
+
 ### Key Learnings
+- `crossOrigin = "anonymous"` on a video element requires the server to return CORS headers — without them, the video silently fails to load (no error event)
+- `requestVideoFrameCallback` only fires for videos visible in the DOM / attached to a rendering context — offscreen video elements never trigger it
+- Blob object URLs are same-origin, so canvas `drawImage` + `toBlob` works without CORS
 - When giving SQL with long URLs, ensure no line breaks/spaces get introduced — caused `pu  blic` corruption in 5 audio URLs (fixed with REPLACE)
 
 ### What's NOT Done
@@ -30,13 +40,16 @@
 - Existing 5 video posts don't have `music_prompt` stored (column is empty) — only new generations will populate it
 - Audio trimmer range inputs still small on mobile
 - FFmpeg 25MB download has no progress indicator
+- Debug `[Save]` and `[Thumbnail]` console logs still in code — remove when stable
 
 ### Git Commits
 - `0e3c88a` — Preserve audio_url after mux and expand music section on edit
 - `e338204` — Store and display music prompt used for each post
+- `a818cb1` — Fix video thumbnail generation hanging on save
 
 ### Next Steps
 - Test music generation + save + edit round-trip to confirm prompt is stored and shown
+- Test video upload + save to confirm thumbnail generates correctly with blob approach
 - Consider showing music prompt in the main post modal (not just edit view)
 - Extract `isVideoUrl()` to shared utility
 - Fix "scheduled ago" text bug
