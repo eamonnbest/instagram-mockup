@@ -1,5 +1,57 @@
 # Build Log
 
+## Session: 2026-03-12 (afternoon) — Video text overlay: render at playback, not baked
+
+### Completed (committed, pushed)
+
+**Video repositioner + crop position (`4e652ef`):**
+- New `VideoRepositioner` component for choosing crop position on videos in the grid
+- `crop_position` field on posts (API + DB) — applied via `objectPosition` CSS on grid and previews
+- Text overlay editor canvas updated from 1080x1080 to 1080x1440 (3:4 aspect ratio)
+- Moved overlay PNG baking from onExport into createPost for async sequencing
+
+**Overlay-at-playback for video text (`d2bb27e`):**
+- **Removed FFmpeg overlay bake at save time** — videos stay clean/unmodified
+- New `overlay_image_url` DB column: transparent overlay PNG uploaded and stored per post
+- Overlay PNG rendered on top of `<video>` via CSS absolute positioning + `pointer-events-none`
+- Videos display in 3:4 `aspect-[3/4]` containers in both mobile and desktop modals (consistent with grid)
+- `crop_position` now applied in modals too (was missing before)
+- Fixed React state race conditions: `overlayImageUrlRef` and `overlayBlocksMapRef` ensure save payload has fresh values
+- Fixed realism preset export path — was skipping overlay-only PNG (now extracted before the branch)
+- Overlay state cleared when media is replaced (prevents stale overlay from old video)
+- `isVideoCover` prop on TextOverlayEditor — hides Background Filters and De-AI Presets for video cover editing
+- Editor display width reduced from 400→320px to fit 3:4 canvas on screen
+- Blob URL cleanup via useEffect when editor closes (prevents memory leak)
+
+### Key Learnings
+- React state setters are async — never read state in a save payload that fires right after setState. Use synchronous refs alongside state.
+- Wrapping a flex child (video) in a div breaks `max-h-full` constraint — use fragments or keep the element as a direct flex child
+- `object-fit: fill` distorts when overlay and video have different aspect ratios — better to force both into the same aspect ratio container
+- JSX ternary can only return one node — wrapping siblings in `<>` fragments solves "Expected '</', got '{'" parse errors
+
+### What's NOT Done
+- Overlay shows on ALL video slides in a carousel (data model is per-post, not per-slide)
+- `extractVideoFrame` uses `onseeked` + 300ms delay instead of `requestVideoFrameCallback` (unreliable on mobile Safari)
+- Orphaned overlay PNGs in Supabase storage on post delete (systemic issue, not overlay-specific)
+- `overlay_blocks` not typed in `page.tsx` Post interface
+- `isVideoUrl()` still duplicated in `page.tsx` and `new/page.tsx`
+- "scheduled ago" text bug still present
+- Debug `[Save]` and `[Thumbnail]` console logs still in code
+
+### Git Commits
+- `4e652ef` — Add video repositioner and crop position support, update canvas to 3:4
+- `d2bb27e` — Overlay-at-playback for video text — stop baking, render via CSS instead
+
+### Next Steps
+- Test full round-trip: Edit Cover → add text → save → view in modal → Edit Post → Edit Cover (verify blocks restore)
+- Consider per-slide overlay support for carousels
+- Replace `onseeked` with `requestVideoFrameCallback` in `extractVideoFrame`
+- Extract `isVideoUrl()` to shared utility
+- Fix "scheduled ago" text bug
+- Clean up debug console logs when stable
+
+---
+
 ## Session: 2026-03-12 — Music editing fixes, music prompt storage, thumbnail fix
 
 ### Completed (committed, pushed)
