@@ -21,6 +21,7 @@ import { uploadViaSigned } from "@/lib/upload-signed"
 import { AudioTrimmer } from "@/components/audio-trimmer"
 import { generateVideoThumbnail } from "@/lib/generate-thumbnail"
 import { ImageCropper } from "@/components/image-cropper"
+import { VideoRepositioner } from "@/components/video-repositioner"
 
 export default function NewPostPageWrapper() {
   return (
@@ -102,6 +103,7 @@ function NewPostPage() {
   const editorRef = useRef<TextOverlayEditorHandle>(null)
   const editorExportResolveRef = useRef<(() => void) | null>(null)
   const exportedImageUrlRef = useRef<string | null>(null)
+  const overlayPngUrlRef = useRef<string | null>(null) // Transparent PNG of text overlay for FFmpeg baking
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [carouselImages, setCarouselImages] = useState<string[]>([])
   const [carouselIndex, setCarouselIndex] = useState(0)
@@ -149,6 +151,8 @@ function NewPostPage() {
   const [pendingCropUrl, setPendingCropUrl] = useState<string | null>(null)
   const [videoDuration, setVideoDuration] = useState<number | null>(null)
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
+  const [cropPosition, setCropPosition] = useState<{ x: number; y: number } | null>(null)
+  const [showRepositioner, setShowRepositioner] = useState(false)
 
   function toggleRealismChip(chipId: string) {
     const chip = REALISM_CHIPS.find((c) => c.id === chipId)
@@ -208,6 +212,7 @@ function NewPostPage() {
           }
           if (post.music_prompt) setSavedMusicPrompt(post.music_prompt)
           if (post.thumbnail_url) setThumbnailUrl(post.thumbnail_url)
+          if (post.crop_position) setCropPosition(post.crop_position)
           // Restore overlay blocks if saved (stored as { "0": [...], "1": [...] })
           if (post.overlay_blocks && typeof post.overlay_blocks === "object") {
             const blocksMap: Record<number, CanvasBlock[]> = {}
@@ -322,10 +327,10 @@ function NewPostPage() {
     if (!selectedImage) {
       const canvas = document.createElement("canvas")
       canvas.width = 1080
-      canvas.height = 1080
+      canvas.height = 1440
       const ctx = canvas.getContext("2d")!
       ctx.fillStyle = "#ffffff"
-      ctx.fillRect(0, 0, 1080, 1080)
+      ctx.fillRect(0, 0, 1080, 1440)
       const blankDataUrl = canvas.toDataURL("image/png")
       const blob = await (await fetch(blankDataUrl)).blob()
       const file = new File([blob], "blank.png", { type: "image/png" })
@@ -519,6 +524,24 @@ function NewPostPage() {
         : [...carouselImages]
       const finalSelectedImage = freshImage || carouselImages[0] || selectedImage
 
+      // Bake text overlay into video if we have one (must happen here, not in onExport, for proper async sequencing)
+      const overlayPng = overlayPngUrlRef.current
+      overlayPngUrlRef.current = null
+      if (overlayPng && finalImages[0] && isVideoUrl(finalImages[0])) {
+        try {
+          console.log("[Save] Baking text overlay into video...")
+          const { overlayImageOnVideo } = await import("@/lib/mux-video")
+          const overlayBlob = await overlayImageOnVideo(finalImages[0], overlayPng)
+          const overlayFile = new File([overlayBlob], "overlay-video.mp4", { type: "video/mp4" })
+          const { url: newVideoUrl } = await uploadViaSigned(overlayFile)
+          finalImages[0] = newVideoUrl
+          console.log("[Save] Text overlay baked into video successfully")
+        } catch (overlayErr) {
+          console.error("[Save] Failed to bake overlay into video:", overlayErr)
+          setPostError("Couldn't bake text into video. Saving without overlay.")
+        }
+      }
+
       // If there's audio, mux it into the primary media (video or still image → video)
       let finalAudioUrl = audioUrl
       const primaryImage = finalImages[0] || finalSelectedImage
@@ -568,7 +591,7 @@ function NewPostPage() {
         }
       }
 
-      console.log("[Save] Sending POST/PATCH...")
+      console.log("[Save] Sending POST/PATCH...", { cropPosition })
       const isEdit = !!editPostId
       const res = await fetch("/api/instagram/posts", {
         method: isEdit ? "PATCH" : "POST",
@@ -585,6 +608,7 @@ function NewPostPage() {
                 audio_url: finalAudioUrl,
                 thumbnail_url: finalThumbnailUrl,
                 music_prompt: savedMusicPrompt,
+                crop_position: cropPosition,
               }
             : {
                 image_url: finalImages[0] || finalSelectedImage,
@@ -597,6 +621,7 @@ function NewPostPage() {
                 audio_url: finalAudioUrl,
                 thumbnail_url: finalThumbnailUrl,
                 music_prompt: savedMusicPrompt,
+                crop_position: cropPosition,
               }
         ),
       })
@@ -680,8 +705,25 @@ function NewPostPage() {
           </div>
         )}
 
+        {/* Video/image repositioner — choose crop position within 3:4 grid frame */}
+        {showRepositioner && selectedImage && (
+          <div className="mb-6 max-w-md mx-auto">
+            <VideoRepositioner
+              mediaUrl={carouselImages[carouselIndex] || selectedImage}
+              isVideo={isVideoUrl(carouselImages[carouselIndex] || selectedImage)}
+              posterUrl={thumbnailUrl || undefined}
+              initialPosition={cropPosition || undefined}
+              onConfirm={(pos) => {
+                setCropPosition(pos)
+                setShowRepositioner(false)
+              }}
+              onCancel={() => setShowRepositioner(false)}
+            />
+          </div>
+        )}
+
         {/* Selected image preview + caption */}
-        {selectedImage && !addingMore && !pendingCropUrl && (
+        {selectedImage && !addingMore && !pendingCropUrl && !showRepositioner && (
           <div className="mb-6">
             {editingTextIndex !== null ? (
               <div className="max-w-md mx-auto">
@@ -719,24 +761,9 @@ function NewPostPage() {
                         // Set the composited image as the thumbnail/cover
                         setThumbnailUrl(uploadedUrl)
                         editedCoverUrlRef.current = uploadedUrl
-
-                        // Bake the overlay into the video using FFmpeg
+                        // Store overlay PNG for FFmpeg baking in createPost (can't bake here — async timing issue)
                         if (overlayOnlyUrl) {
-                          try {
-                            setPostError(null)
-                            console.log("[Save] Baking overlay into video...")
-                            const { overlayImageOnVideo } = await import("@/lib/mux-video")
-                            const originalVideoUrl = originalImageUrls[idx] || currentMediaUrl
-                            const overlayBlob = await overlayImageOnVideo(originalVideoUrl, overlayOnlyUrl)
-                            const overlayFile = new File([overlayBlob], "overlay-video.mp4", { type: "video/mp4" })
-                            const { url: newVideoUrl } = await uploadViaSigned(overlayFile)
-                            setCarouselImages((prev) => prev.map((img, i) => (i === idx ? newVideoUrl : img)))
-                            if (idx === 0) setSelectedImage(newVideoUrl)
-                            console.log("[Save] Video overlay baked successfully")
-                          } catch (overlayErr) {
-                            console.error("Failed to bake overlay into video:", overlayErr)
-                            setPostError("Cover saved but couldn't bake text into video. Video will play without overlay.")
-                          }
+                          overlayPngUrlRef.current = overlayOnlyUrl
                         }
                       } else {
                         setCarouselImages((prev) => prev.map((img, i) => (i === idx ? uploadedUrl : img)))
@@ -774,6 +801,7 @@ function NewPostPage() {
                   controls
                   playsInline
                   className="w-full h-full object-cover"
+                  style={cropPosition ? { objectPosition: `${cropPosition.x * 100}% ${cropPosition.y * 100}%` } : undefined}
                   onLoadedMetadata={(e) => {
                     const dur = (e.target as HTMLVideoElement).duration
                     if (dur && isFinite(dur)) {
@@ -843,7 +871,7 @@ function NewPostPage() {
                   >
                     {isVideoUrl(img) ? (
                       <>
-                        <video src={img} muted className="w-full h-full object-cover" />
+                        <video src={img} muted className="w-full h-full object-cover" style={cropPosition ? { objectPosition: `${cropPosition.x * 100}% ${cropPosition.y * 100}%` } : undefined} />
                         <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                           <Play className="w-4 h-4 text-white fill-white" />
                         </div>
@@ -894,21 +922,25 @@ function NewPostPage() {
                 <Type className="w-4 h-4 mr-1.5" />
                 {isVideoUrl(carouselImages[carouselIndex] || selectedImage || "") ? "Edit Cover" : "Edit Image"}
               </Button>
-              {!isVideoUrl(carouselImages[carouselIndex] || selectedImage || "") && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    // Use the original (un-overlayed) image if available, otherwise current
-                    const imgUrl = originalImageUrls[carouselIndex] || carouselImages[carouselIndex] || selectedImage || ""
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const currentUrl = carouselImages[carouselIndex] || selectedImage || ""
+                  if (isVideoUrl(currentUrl)) {
+                    // Videos use the 3:4 repositioner (drag to choose crop position)
+                    setShowRepositioner(true)
+                  } else {
+                    // Images use the full cropper (zoom + pan)
+                    const imgUrl = originalImageUrls[carouselIndex] || currentUrl
                     setPendingCropUrl(imgUrl)
-                  }}
-                  className="flex-1"
-                >
-                  <Crop className="w-4 h-4 mr-1.5" />
-                  Reposition
-                </Button>
-              )}
+                  }
+                }}
+                className="flex-1"
+              >
+                <Crop className="w-4 h-4 mr-1.5" />
+                Reposition
+              </Button>
             </div>
             </>
             )}

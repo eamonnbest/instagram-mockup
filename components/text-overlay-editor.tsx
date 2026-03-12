@@ -120,8 +120,12 @@ export interface TextOverlayEditorHandle {
   triggerExport: () => void
 }
 
-const CANVAS_SIZE = 1080
-const DISPLAY_SIZE = 400
+const CANVAS_W = 1080
+const CANVAS_H = 1440 // 3:4 aspect ratio
+const CANVAS_SIZE = CANVAS_W // backward compat for width references
+const DISPLAY_W = 400
+const DISPLAY_H = Math.round(DISPLAY_W * (CANVAS_H / CANVAS_W)) // 533
+const DISPLAY_SIZE = DISPLAY_W // backward compat for width references
 
 // Sub-component for text blocks with auto-measured background
 function TextBlockGroup({
@@ -284,7 +288,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
   const [isExportingVideo, setIsExportingVideo] = useState(false)
   const [videoExportProgress, setVideoExportProgress] = useState(0)
   const transformerRef = useRef<Konva.Transformer>(null)
-  const [imgDims, setImgDims] = useState({ x: 0, y: 0, w: CANVAS_SIZE, h: CANVAS_SIZE })
+  const [imgDims, setImgDims] = useState({ x: 0, y: 0, w: CANVAS_W, h: CANVAS_H })
   const [imgError, setImgError] = useState(false)
   // Start counter above any existing block IDs to avoid collisions
   const getInitialCounter = () => {
@@ -320,13 +324,16 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     img.onload = () => {
       if (cancelled) return
       const imgRatio = img.width / img.height
+      const canvasRatio = CANVAS_W / CANVAS_H
       let w: number, h: number, x: number, y: number
-      if (imgRatio > 1) {
-        h = CANVAS_SIZE; w = CANVAS_SIZE * imgRatio
-        x = -(w - CANVAS_SIZE) / 2; y = 0
+      if (imgRatio > canvasRatio) {
+        // Image wider than canvas — fill height, overflow width
+        h = CANVAS_H; w = CANVAS_H * imgRatio
+        x = -(w - CANVAS_W) / 2; y = 0
       } else {
-        w = CANVAS_SIZE; h = CANVAS_SIZE / imgRatio
-        x = 0; y = -(h - CANVAS_SIZE) / 2
+        // Image taller than canvas — fill width, overflow height
+        w = CANVAS_W; h = CANVAS_W / imgRatio
+        x = 0; y = -(h - CANVAS_H) / 2
       }
       setImgDims({ x, y, w, h })
       setImage(img)
@@ -521,7 +528,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     const block: TextBlock = {
       id, type: "text",
       text: "Your text here",
-      x: CANVAS_SIZE / 2 - 250, y: CANVAS_SIZE / 2 - 50,
+      x: CANVAS_W / 2 - 250, y: CANVAS_H / 2 - 50,
       fontSize: 72, fill: "#ffffff",
       fontStyle: "bold", fontFamily: "Arial",
       align: "center", width: 500,
@@ -540,8 +547,8 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     const id = nextId("rect")
     const block: ShapeBlock = {
       id, type: "rect",
-      x: CANVAS_SIZE / 4, y: CANVAS_SIZE / 4,
-      width: CANVAS_SIZE / 2, height: CANVAS_SIZE / 2,
+      x: CANVAS_W / 4, y: CANVAS_H / 4,
+      width: CANVAS_W / 2, height: CANVAS_H / 2,
       fill: "#000000", opacity: 0.5, rotation: 0, cornerRadius: 0,
       strokeEnabled: false, strokeColor: "#ffffff", strokeWidth: 4,
     }
@@ -553,7 +560,7 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     const id = nextId("ellipse")
     const block: EllipseBlock = {
       id, type: "ellipse",
-      x: CANVAS_SIZE / 2, y: CANVAS_SIZE / 2,
+      x: CANVAS_W / 2, y: CANVAS_H / 2,
       radiusX: 200, radiusY: 200,
       fill: "#000000", opacity: 0.5, rotation: 0,
       strokeEnabled: false, strokeColor: "#ffffff", strokeWidth: 4,
@@ -566,8 +573,8 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     const id = nextId("line")
     const block: LineBlock = {
       id, type: "line",
-      x: CANVAS_SIZE / 4, y: CANVAS_SIZE / 2,
-      points: [0, 0, CANVAS_SIZE / 2, 0],
+      x: CANVAS_W / 4, y: CANVAS_H / 2,
+      points: [0, 0, CANVAS_W / 2, 0],
       stroke: "#ffffff", strokeWidth: 6, opacity: 1, rotation: 0,
       arrowEnd: true, arrowStart: false, dash: false,
     }
@@ -588,14 +595,14 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
       img.onload = () => {
         const id = nextId("image")
         // Scale to fit within canvas while maintaining aspect ratio
-        const maxDim = CANVAS_SIZE / 2
+        const maxDim = CANVAS_W / 2
         const ratio = img.width / img.height
         let w: number, h: number
         if (ratio > 1) { w = maxDim; h = maxDim / ratio }
         else { h = maxDim; w = maxDim * ratio }
         const block: ImageBlock = {
           id, type: "image",
-          x: (CANVAS_SIZE - w) / 2, y: (CANVAS_SIZE - h) / 2,
+          x: (CANVAS_W - w) / 2, y: (CANVAS_H - h) / 2,
           width: w, height: h,
           opacity: 1, rotation: 0, src: dataUrl, cornerRadius: 0,
         }
@@ -668,16 +675,16 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
       tempImg.onerror = fallbackExport
       tempImg.onload = () => {
         const c = document.createElement("canvas")
-        c.width = CANVAS_SIZE; c.height = CANVAS_SIZE
+        c.width = CANVAS_W; c.height = CANVAS_H
         const ctx = c.getContext("2d")
         if (!ctx) { fallbackExport(); return }
-        ctx.drawImage(tempImg, 0, 0, CANVAS_SIZE, CANVAS_SIZE)
+        ctx.drawImage(tempImg, 0, 0, CANVAS_W, CANVAS_H)
         // First JPEG pass
         const jpeg1 = c.toDataURL("image/jpeg", 0.88)
         const tempImg2 = new window.Image()
         tempImg2.onerror = fallbackExport
         tempImg2.onload = () => {
-          ctx.drawImage(tempImg2, 0, 0, CANVAS_SIZE, CANVAS_SIZE)
+          ctx.drawImage(tempImg2, 0, 0, CANVAS_W, CANVAS_H)
           // Second pass back to PNG for clean output (artifacts are now baked in)
           const finalUrl = c.toDataURL("image/png")
           setSelectedId(null)
@@ -868,8 +875,8 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     const origHeight = stage.height()
     const origScaleX = stage.scaleX()
     const origScaleY = stage.scaleY()
-    stage.width(CANVAS_SIZE)
-    stage.height(CANVAS_SIZE)
+    stage.width(CANVAS_W)
+    stage.height(CANVAS_H)
     stage.scaleX(1)
     stage.scaleY(1)
     stage.batchDraw()
@@ -1002,19 +1009,19 @@ export const TextOverlayEditor = forwardRef<TextOverlayEditorHandle, TextOverlay
     <div className="space-y-3 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
       {/* Canvas */}
       {imgError && (
-        <div className="mx-auto bg-neutral-100 rounded-lg flex items-center justify-center text-sm text-neutral-500" style={{ width: DISPLAY_SIZE, height: DISPLAY_SIZE }}>
+        <div className="mx-auto bg-neutral-100 rounded-lg flex items-center justify-center text-sm text-neutral-500" style={{ width: DISPLAY_W, height: DISPLAY_H }}>
           Failed to load image
         </div>
       )}
       <div
         ref={canvasContainerRef}
         className={`mx-auto bg-neutral-900 rounded-lg overflow-hidden relative ${imgError ? "hidden" : ""}`}
-        style={{ width: DISPLAY_SIZE, height: DISPLAY_SIZE }}
+        style={{ width: DISPLAY_W, height: DISPLAY_H }}
       >
         <Stage
           ref={stageRef}
-          width={DISPLAY_SIZE}
-          height={DISPLAY_SIZE}
+          width={DISPLAY_W}
+          height={DISPLAY_H}
           scaleX={scale}
           scaleY={scale}
           onMouseDown={(e) => {

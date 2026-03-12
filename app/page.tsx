@@ -91,6 +91,7 @@ interface InstagramPost {
   status: "draft" | "approved" | "rejected"
   audio_url: string | null
   thumbnail_url: string | null
+  crop_position: { x: number; y: number } | null
 }
 
 interface NoteEntry {
@@ -214,6 +215,8 @@ function SortablePost({
     opacity: isDragging ? 0.8 : 1,
   }
 
+  const cropStyle = post.crop_position ? { objectPosition: `${post.crop_position.x * 100}% ${post.crop_position.y * 100}%` } : undefined
+
   return (
     <div ref={setNodeRef} style={style} className="aspect-[3/4] relative group overflow-hidden bg-neutral-100">
       {isReordering ? (
@@ -224,9 +227,9 @@ function SortablePost({
         >
           {post.image_url ? (
             post.image_url && isVideoUrl(post.image_url) ? (
-              <video src={post.image_url} muted preload={isMobile || post.thumbnail_url ? "none" : "metadata"} poster={post.thumbnail_url || undefined} className="w-full h-full object-cover" />
+              <video src={post.image_url} muted preload={isMobile || post.thumbnail_url ? "none" : "metadata"} poster={post.thumbnail_url || undefined} className="w-full h-full object-cover" style={cropStyle} />
             ) : (
-              <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
+              <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" style={cropStyle} unoptimized />
             )
           ) : (
             <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
@@ -242,7 +245,7 @@ function SortablePost({
           {post.image_url ? (
             post.image_url && isVideoUrl(post.image_url) ? (
               <>
-                <video src={post.image_url} muted preload={isMobile || post.thumbnail_url ? "none" : "metadata"} poster={post.thumbnail_url || undefined} className="w-full h-full object-cover" />
+                <video src={post.image_url} muted preload={isMobile || post.thumbnail_url ? "none" : "metadata"} poster={post.thumbnail_url || undefined} className="w-full h-full object-cover" style={cropStyle} />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
                     <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
@@ -250,7 +253,7 @@ function SortablePost({
                 </div>
               </>
             ) : (
-              <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" unoptimized />
+              <Image src={post.image_url} alt={post.caption || "Post"} fill sizes="33vw" className="object-cover" style={cropStyle} unoptimized />
             )
           ) : (
             <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
@@ -983,7 +986,7 @@ export default function InstagramPage() {
                       return (
                         <div key={post?.id ?? `empty-${i}`} className="aspect-[3/4] relative bg-white">
                           {post?.image_url && (
-                            <Image src={post.image_url} alt="" fill sizes="66px" className="object-cover" unoptimized />
+                            <Image src={post.image_url} alt="" fill sizes="66px" className="object-cover" style={post.crop_position ? { objectPosition: `${post.crop_position.x * 100}% ${post.crop_position.y * 100}%` } : undefined} unoptimized />
                           )}
                         </div>
                       )
