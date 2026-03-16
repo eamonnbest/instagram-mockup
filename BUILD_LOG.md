@@ -1,5 +1,26 @@
 # Build Log
 
+## Session: 2026-03-16 — Fix video download on iOS mobile
+
+### Completed (committed, pushed)
+
+**Web Share API for mobile download (`86858f8`):**
+- iOS Safari/Chrome ignores `<a download>` on blob URLs — opens video player instead of saving
+- Download button now uses `navigator.share({ files: [file] })` on mobile → native iOS share sheet with "Save Video"
+- Falls back to anchor-click download on desktop where it works fine
+- Removed redundant download-time FFmpeg muxing — videos are already muxed at save time (`new/page.tsx`), so the stored video URL already contains audio
+- Merged two download buttons (Download icon + Music icon) into one smart Download button
+- Removed `downloadWithAudio` function, `muxing`/`muxProgress` state, progress UI, `Loader2` and `Music` imports
+
+### Key learning
+- Videos with audio are muxed into a single MP4 at save time. The separate `audio_url` in the DB is kept for re-editing only. No need to re-mux at download time.
+- FFmpeg.wasm fails on mobile Chrome iOS (SharedArrayBuffer/memory constraints) — but this is now moot since we don't mux at download time anymore.
+
+### Not yet verified
+- User needs to test on phone after Vercel deploy to confirm the share sheet appears with "Save Video" option
+
+---
+
 ## Session: 2026-03-12 (afternoon) — Video text overlay: render at playback, not baked
 
 ### Completed (committed, pushed)
