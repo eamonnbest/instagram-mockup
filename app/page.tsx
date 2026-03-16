@@ -32,7 +32,6 @@ import {
   XCircle,
   RotateCcw,
   Play,
-  Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -309,8 +308,6 @@ export default function InstagramPage() {
   const isMobile = useIsMobile()
   const [selectedPost, setSelectedPost] = useState<InstagramPost | null>(null)
   const modalAudioRef = useRef<HTMLAudioElement | null>(null)
-  const [muxing, setMuxing] = useState(false)
-  const [muxProgress, setMuxProgress] = useState("")
   const [isEditing, setIsEditing] = useState(false)
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editCaption, setEditCaption] = useState("")
@@ -458,43 +455,6 @@ export default function InstagramPage() {
     }
   }
 
-  async function downloadWithAudio(videoUrl: string, audioUrl: string) {
-    setMuxing(true)
-    setMuxProgress("Loading FFmpeg...")
-    try {
-      // Probe video duration for fade-out
-      const dur = await new Promise<number>((resolve) => {
-        const v = document.createElement("video")
-        v.preload = "metadata"
-        v.onloadedmetadata = () => resolve(v.duration)
-        v.onerror = () => resolve(0)
-        v.src = videoUrl
-      })
-      const { muxVideoAudio } = await import("@/lib/mux-video")
-      const blob = await muxVideoAudio(videoUrl, audioUrl, (msg) => setMuxProgress(msg), dur || undefined)
-      const file = new File([blob], "video-with-audio.mp4", { type: "video/mp4" })
-      // Mobile: use Web Share API so iOS share sheet offers "Save Video"
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file] })
-      } else {
-        // Desktop fallback: trigger browser download
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = "video-with-audio.mp4"
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-      }
-    } catch (error) {
-      console.error("Failed to mux video+audio:", error)
-      alert("Failed to combine video and audio. Try downloading them separately.")
-    } finally {
-      setMuxing(false)
-      setMuxProgress("")
-    }
-  }
 
   async function updatePostStatus(id: string, status: "draft" | "approved" | "rejected") {
     try {
@@ -1180,21 +1140,9 @@ export default function InstagramPage() {
                       </button>
                       <button
                         title="Download"
-                        disabled={muxing}
-                        onClick={() => {
-                          const url = modalImages[modalCarouselIndex] || ""
-                          if (selectedPost.audio_url && url && isVideoUrl(url)) {
-                            downloadWithAudio(url, selectedPost.audio_url)
-                          } else {
-                            downloadFile(url)
-                          }
-                        }}
+                        onClick={() => downloadFile(modalImages[modalCarouselIndex] || "")}
                       >
-                        {muxing ? (
-                          <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
-                        ) : (
-                          <Download className="w-5 h-5" />
-                        )}
+                        <Download className="w-5 h-5" />
                       </button>
                       <button onClick={() => deletePost(selectedPost.id)}>
                         <Trash2 className="w-5 h-5 text-neutral-400" />
@@ -1245,12 +1193,6 @@ export default function InstagramPage() {
                       <audio src={selectedPost.audio_url} controls className="w-full h-8" />
                     </div>
                   )
-                )}
-                {muxing && (
-                  <div className="px-3 py-1.5 border-t border-neutral-100 flex items-center gap-2 text-xs text-neutral-500">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Combining video + audio...
-                  </div>
                 )}
 
                 {/* Chat */}
@@ -1515,12 +1457,6 @@ export default function InstagramPage() {
                     </div>
                   )
                 )}
-                {muxing && (
-                  <div className="border-t border-neutral-200 px-3 py-1.5 flex items-center gap-2 text-xs text-neutral-500">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Combining video + audio...
-                  </div>
-                )}
 
                 {/* Chat */}
                 <div className="border-t border-neutral-200 p-3">
@@ -1642,22 +1578,10 @@ export default function InstagramPage() {
                       </button>
                       <button
                         title="Download"
-                        disabled={muxing}
                         className="cursor-pointer hover:text-neutral-500"
-                        onClick={() => {
-                          const url = modalImages[modalCarouselIndex] || ""
-                          if (selectedPost.audio_url && url && isVideoUrl(url)) {
-                            downloadWithAudio(url, selectedPost.audio_url)
-                          } else {
-                            downloadFile(url)
-                          }
-                        }}
+                        onClick={() => downloadFile(modalImages[modalCarouselIndex] || "")}
                       >
-                        {muxing ? (
-                          <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
-                        ) : (
-                          <Download className="w-5 h-5 cursor-pointer hover:text-neutral-500" />
-                        )}
+                        <Download className="w-5 h-5 cursor-pointer hover:text-neutral-500" />
                       </button>
                       <button onClick={() => deletePost(selectedPost.id)}>
                         <Trash2 className="w-5 h-5 cursor-pointer hover:text-red-500" />
