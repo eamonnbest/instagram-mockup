@@ -33,7 +33,6 @@ import {
   RotateCcw,
   Play,
   Loader2,
-  Music,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -428,6 +427,34 @@ export default function InstagramPage() {
       setSelectedPost(null)
     } catch (error) {
       console.error("Failed to delete:", error)
+    }
+  }
+
+  async function downloadFile(url: string) {
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const ext = url.split(".").pop()?.split("?")[0] || "mp4"
+      const isVideo = ext === "mp4" || ext === "mov" || ext === "webm"
+      const mime = isVideo ? "video/mp4" : blob.type
+      const filename = `download.${ext}`
+      const file = new File([blob], filename, { type: mime })
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] })
+      } else {
+        const objUrl = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = objUrl
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(objUrl)
+      }
+    } catch (error) {
+      // User cancelled share sheet — not a real error
+      if (error instanceof Error && error.name === "AbortError") return
+      console.error("Download failed:", error)
     }
   }
 
@@ -1151,28 +1178,24 @@ export default function InstagramPage() {
                           </span>
                         )}
                       </button>
-                      <a
+                      <button
                         title="Download"
-                        href={modalImages[modalCarouselIndex] || "#"}
-                        download
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        disabled={muxing}
+                        onClick={() => {
+                          const url = modalImages[modalCarouselIndex] || ""
+                          if (selectedPost.audio_url && url && isVideoUrl(url)) {
+                            downloadWithAudio(url, selectedPost.audio_url)
+                          } else {
+                            downloadFile(url)
+                          }
+                        }}
                       >
-                        <Download className="w-5 h-5" />
-                      </a>
-                      {selectedPost.audio_url && currentModalImg && isVideoUrl(currentModalImg) && (
-                        <button
-                          title="Download video with audio"
-                          onClick={() => downloadWithAudio(currentModalImg, selectedPost.audio_url!)}
-                          disabled={muxing}
-                        >
-                          {muxing ? (
-                            <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
-                          ) : (
-                            <Music className="w-5 h-5" />
-                          )}
-                        </button>
-                      )}
+                        {muxing ? (
+                          <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
+                        ) : (
+                          <Download className="w-5 h-5" />
+                        )}
+                      </button>
                       <button onClick={() => deletePost(selectedPost.id)}>
                         <Trash2 className="w-5 h-5 text-neutral-400" />
                       </button>
@@ -1617,29 +1640,25 @@ export default function InstagramPage() {
                           </span>
                         )}
                       </button>
-                      <a
+                      <button
                         title="Download"
-                        href={modalImages[modalCarouselIndex] || "#"}
-                        download
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        disabled={muxing}
+                        className="cursor-pointer hover:text-neutral-500"
+                        onClick={() => {
+                          const url = modalImages[modalCarouselIndex] || ""
+                          if (selectedPost.audio_url && url && isVideoUrl(url)) {
+                            downloadWithAudio(url, selectedPost.audio_url)
+                          } else {
+                            downloadFile(url)
+                          }
+                        }}
                       >
-                        <Download className="w-5 h-5 cursor-pointer hover:text-neutral-500" />
-                      </a>
-                      {selectedPost.audio_url && currentModalImg && isVideoUrl(currentModalImg) && (
-                        <button
-                          title="Download video with audio"
-                          onClick={() => downloadWithAudio(currentModalImg, selectedPost.audio_url!)}
-                          disabled={muxing}
-                          className="cursor-pointer hover:text-neutral-500"
-                        >
-                          {muxing ? (
-                            <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
-                          ) : (
-                            <Music className="w-5 h-5" />
-                          )}
-                        </button>
-                      )}
+                        {muxing ? (
+                          <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
+                        ) : (
+                          <Download className="w-5 h-5 cursor-pointer hover:text-neutral-500" />
+                        )}
+                      </button>
                       <button onClick={() => deletePost(selectedPost.id)}>
                         <Trash2 className="w-5 h-5 cursor-pointer hover:text-red-500" />
                       </button>
