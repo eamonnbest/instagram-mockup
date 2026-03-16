@@ -445,15 +445,21 @@ export default function InstagramPage() {
       })
       const { muxVideoAudio } = await import("@/lib/mux-video")
       const blob = await muxVideoAudio(videoUrl, audioUrl, (msg) => setMuxProgress(msg), dur || undefined)
-      // Trigger browser download
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = "video-with-audio.mp4"
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const file = new File([blob], "video-with-audio.mp4", { type: "video/mp4" })
+      // Mobile: use Web Share API so iOS share sheet offers "Save Video"
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] })
+      } else {
+        // Desktop fallback: trigger browser download
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = "video-with-audio.mp4"
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }
     } catch (error) {
       console.error("Failed to mux video+audio:", error)
       alert("Failed to combine video and audio. Try downloading them separately.")
